@@ -1,23 +1,30 @@
 import React, { useState, useEffect } from 'react'
 import { Flex, Image, Badge, Text, Box, Button } from 'theme-ui'
-import Seo from '../seo'
 import { getEtherscanTxs } from '../../utils'
 import { ProjectContext } from '../../contextProvider/projectProvider'
-import { TorusContext } from '../../contextProvider/torusProvider'
-import { ImLocation } from 'react-icons/im'
+import { useWallet } from '../../contextProvider/WalletProvider'
+import { PopupContext } from '../../contextProvider/popupProvider'
 
 import testImg from '../../images/giveth-test-image.png'
+import CancelledModal from './cancelledModal'
 import ProjectImageGallery1 from '../../images/svg/create/projectImageGallery1.svg'
 import ProjectImageGallery2 from '../../images/svg/create/projectImageGallery2.svg'
 import ProjectImageGallery3 from '../../images/svg/create/projectImageGallery3.svg'
 import ProjectImageGallery4 from '../../images/svg/create/projectImageGallery4.svg'
+import { FaShareAlt } from 'react-icons/fa'
+import { ImLocation } from 'react-icons/im'
+import { BsHeartFill } from 'react-icons/bs'
 
 import { Link } from 'gatsby'
-import { useQuery, useApolloClient } from '@apollo/react-hooks'
+import { useQuery, useApolloClient } from '@apollo/client'
 import {
-  GET_STRIPE_PROJECT_DONATIONS,
-  GET_PROJECT_UPDATES
+  TOGGLE_PROJECT_REACTION,
+  GET_PROJECT_UPDATES,
+  FETCH_PROJECT,
+  GET_PROJECT_REACTIONS
 } from '../../apollo/gql/projects'
+import { PROJECT_DONATIONS } from '../../apollo/gql/donations'
+import { GET_USER } from '../../apollo/gql/auth'
 import styled from '@emotion/styled'
 import theme from '../../gatsby-plugin-theme-ui'
 
@@ -33,45 +40,88 @@ const FloatingDonateView = styled(Flex)`
 `
 
 export const ProjectDonatorView = ({ pageContext }) => {
-  const { user } = React.useContext(TorusContext)
+  const { user } = useWallet()
   const [currentTab, setCurrentTab] = useState('description')
   const [totalDonations, setTotalDonations] = useState(null)
   const [totalGivers, setTotalGivers] = useState(null)
+  const [totalReactions, setTotalReactions] = useState(null)
   const [isOwner, setIsOwner] = useState(false)
+  const [isCancelled, setIsCancelled] = useState(null)
+  const usePopup = React.useContext(PopupContext)
   const isSSR = typeof window === 'undefined'
   const client = useApolloClient()
-
-  const { data } = useQuery(GET_STRIPE_PROJECT_DONATIONS, {
-    variables: { projectId: pageContext?.project?.id }
-  })
 
   const { currentProjectView, setCurrentProjectView } = React.useContext(
     ProjectContext
   )
 
   const project = pageContext?.project
+  const reactions = totalReactions || project?.reactions
+  const [hearted, setHearted] = useState(false)
+  const [heartedCount, setHeartedCount] = useState(null)
+
+  const donations = currentProjectView?.donations?.filter(el => el != null)
+
+  const reactToProject = async () => {
+    try {
+      const reaction = await client?.mutate({
+        mutation: TOGGLE_PROJECT_REACTION,
+        variables: {
+          reaction: 'heart',
+          projectId: parseFloat(project?.id)
+        }
+      })
+
+      const { data } = reaction
+      const { toggleProjectReaction } = data
+      const { reaction: hearted, reactionCount } = toggleProjectReaction
+      console.log({ hearted })
+      setHeartedCount(reactionCount)
+      setHearted(hearted)
+    } catch (error) {
+      usePopup?.triggerPopup('WelcomeLoggedOut')
+      console.log({ error })
+    }
+  }
 
   useEffect(() => {
     const firstFetch = async () => {
       try {
         // Add donations to current project store
         if (!project.walletAddress) return
-        const cryptoTxs = await getEtherscanTxs(
-          project.walletAddress,
-          client,
-          true
-        )
-        console.log({ cryptoTxs, data })
-        let donations = []
-        if (cryptoTxs) {
-          donations = [
-            data?.getStripeProjectDonations || null,
-            ...cryptoTxs.txs
-          ].filter(function (e) {
-            return e
-          })
+        // Etherscan not used anymore front side
+        // const cryptoTxs = await getEtherscanTxs(
+        //   project.walletAddress,
+        //   client,
+        //   true
+        // )
+
+        // GET PROJECT -- mainly to check status client side
+        const { data: projectReFetched } = await client.query({
+          query: FETCH_PROJECT,
+          variables: { id: project?.id },
+          fetchPolicy: 'network-only'
+        })
+        console.log({ projectReFetched })
+        if (
+          projectReFetched?.project?.length > 0 &&
+          projectReFetched.project[0].status?.id !== '5'
+        ) {
+          setIsCancelled(true)
+          return
         }
 
+        const { data: donationsToProject } = await client.query({
+          query: PROJECT_DONATIONS,
+          variables: { toWalletAddresses: [project.walletAddress] },
+          fetchPolicy: 'network-only'
+        })
+        const donations = donationsToProject?.donationsToWallets
+
+        const ethBalance = donations?.reduce(
+          (prev, current) => prev + current?.amount,
+          0
+        )
         // Get Updates
         const updates = await client?.query({
           query: GET_PROJECT_UPDATES,
@@ -81,16 +131,39 @@ export const ProjectDonatorView = ({ pageContext }) => {
             skip: 0
           }
         })
+        // Get Reactions
+        const reactionsFetch = await client?.query({
+          query: GET_PROJECT_REACTIONS,
+          variables: {
+            projectId: parseInt(project?.id)
+          }
+        })
+        const reactions = reactionsFetch?.data?.getProjectReactions
+        setTotalReactions(reactions)
+        setHeartedCount(reactions?.length)
+        setHearted(reactions?.find(o => o.userId === user?.id))
 
+        // Get project admin Info
+        const admin = /^\d+$/.test(project?.admin)
+          ? await client?.query({
+              query: GET_USER,
+              variables: {
+                userId: parseInt(project?.admin)
+              }
+            })
+          : null
         setCurrentProjectView({
           ...currentProjectView,
-          ethBalance: cryptoTxs?.balance,
+          ethBalance,
           donations,
+          admin: admin?.data?.user,
           updates: updates?.data?.getProjectUpdates
         })
-        setTotalDonations(donations?.length)
-        setTotalGivers([...new Set(donations?.map(data => data?.donor))].length)
-        setIsOwner(pageContext?.project?.admin === user.userIDFromDB)
+
+        setTotalGivers(
+          [...new Set(donations?.map(data => data?.fromWalletAddress))].length
+        )
+        setIsOwner(pageContext?.project?.admin === user.id)
       } catch (error) {
         console.log({ error })
       }
@@ -98,6 +171,7 @@ export const ProjectDonatorView = ({ pageContext }) => {
 
     firstFetch()
   }, [])
+
   const showMap = process.env.OPEN_FOREST_MAP
     ? process.env.OPEN_FOREST_MAP
     : false
@@ -133,10 +207,10 @@ export const ProjectDonatorView = ({ pageContext }) => {
       return false
     }
   }
-  console.log({ currentProjectView })
+
   return (
     <>
-      <Seo title={project?.title} />
+      <CancelledModal isOpen={isCancelled} />
       <Flex>
         {setImage(project?.image) || (
           <Image
@@ -179,7 +253,7 @@ export const ProjectDonatorView = ({ pageContext }) => {
                   fontFamily: 'heading',
                   fontWeight: 'bold',
                   color: 'secondary',
-                  wordBreak: 'break-all'
+                  wordBreak: 'break-word'
                 }}
               >
                 {pageContext?.project?.title}
@@ -191,15 +265,25 @@ export const ProjectDonatorView = ({ pageContext }) => {
                   alignItems: 'center'
                 }}
               >
-                <Text
-                  sx={{
-                    fontSize: 6,
-                    fontFamily: 'body',
-                    fontWeight: 'body',
-                    color: 'primary',
-                    mt: '10px'
-                  }}
-                ></Text>
+                {currentProjectView?.admin?.name && (
+                  <Link
+                    style={{ textDecoration: 'none' }}
+                    to={`/user/${currentProjectView.admin?.walletAddress}`}
+                  >
+                    <Text
+                      sx={{
+                        fontSize: 4,
+                        fontFamily: 'body',
+                        fontWeight: 'body',
+                        color: 'primary',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {`by ${currentProjectView.admin.name}`}
+                    </Text>
+                  </Link>
+                )}
+
                 {pageContext?.project?.impactLocation && (
                   <Flex>
                     <ImLocation size='24px' color={theme.colors.secondary} />
@@ -299,9 +383,12 @@ export const ProjectDonatorView = ({ pageContext }) => {
               >
                 Updates
                 {currentProjectView?.updates ? (
-                  <Badge variant='blueDot' sx={{ ml: [-2, 2] }}>
-                    <Text sx={{ color: 'white', mt: '-2px' }}>
-                      {currentProjectView?.updates.length}{' '}
+                  <Badge
+                    variant='blueDot'
+                    sx={{ ml: [-2, 2], textAlign: 'center' }}
+                  >
+                    <Text sx={{ color: 'white', mt: '-2px', fontSize: '15px' }}>
+                      {currentProjectView?.updates?.length}{' '}
                     </Text>
                   </Badge>
                 ) : (
@@ -328,8 +415,8 @@ export const ProjectDonatorView = ({ pageContext }) => {
                 }}
               >
                 Donations{' '}
-                {currentProjectView?.donations
-                  ? `( ${currentProjectView?.donations.length} )`
+                {currentProjectView?.donations?.length > 0
+                  ? `( ${currentProjectView.donations.length} )`
                   : ''}
               </Text>
             </Button>
@@ -340,6 +427,9 @@ export const ProjectDonatorView = ({ pageContext }) => {
                 <Text
                   sx={{
                     mb: 4,
+                    wordBreak: 'break-word',
+                    whiteSpace: 'break-spaces',
+                    width: '100%',
                     fontSize: 3,
                     fontFamily: 'body',
                     fontWeight: 'body',
@@ -356,7 +446,10 @@ export const ProjectDonatorView = ({ pageContext }) => {
             ) : (
               !isSSR && (
                 <React.Suspense fallback={<div />}>
-                  <DonationsTab project={project} />
+                  <DonationsTab
+                    project={project}
+                    donations={currentProjectView.donations}
+                  />
                 </React.Suspense>
               )
             )}
@@ -397,16 +490,16 @@ export const ProjectDonatorView = ({ pageContext }) => {
           </Button>
           <Flex
             sx={{
+              flexDirection: ['row', 'column', 'row'],
+              alignItems: 'center',
               justifyContent: 'space-around',
               fontFamily: 'heading',
               textTransform: 'uppercase',
               my: '20px'
             }}
           >
-            <Text>Givers: {totalGivers}</Text>
-            <Text sx={{ pl: 4, borderLeft: '2px solid #edf0fa' }}>
-              Donations: {totalDonations}
-            </Text>
+            <Text>Givers: {totalGivers || 0}</Text>
+            <Text>Donations: {donations?.length || 0}</Text>
           </Flex>
           <Flex sx={{ justifyContent: 'space-evenly', flexWrap: 'wrap' }}>
             {project?.categories.length > 0 &&
@@ -436,19 +529,67 @@ export const ProjectDonatorView = ({ pageContext }) => {
               })}
           </Flex>
 
-          <Flex sx={{ justifyContent: 'center' }}>
-            <Link to='/projects'>
+          {/* <Flex sx={{ justifyContent: 'center', mt: 2 }}>
+            <Link to='/projects' style={{ textDecoration: 'none' }}>
               <Text
                 sx={{
                   variant: 'text.medium',
                   color: 'primary',
                   textDecoration: 'none',
-                  mt: '10px'
+                  mt: '5px'
                 }}
               >
                 View similar projects
               </Text>
             </Link>
+          </Flex> */}
+          <Flex
+            sx={{
+              mt: 2,
+              justifyContent: 'center',
+              textAlign: 'center',
+              alignItems: 'center',
+              width: '100%'
+            }}
+          >
+            <Flex sx={{ alignItems: 'center', mr: 3 }}>
+              <BsHeartFill
+                style={{ cursor: 'pointer' }}
+                size='18px'
+                color={hearted ? theme.colors.red : theme.colors.muted}
+                onClick={reactToProject}
+              />
+              {heartedCount && heartedCount > 0 ? (
+                <Text sx={{ variant: 'text.default', ml: 2 }}>
+                  {heartedCount}
+                </Text>
+              ) : null}
+            </Flex>
+            <Flex
+              sx={{
+                cursor: 'pointer',
+                alignItems: 'center'
+              }}
+              onClick={() => {
+                usePopup?.triggerPopup('share', {
+                  title: project?.title,
+                  description: project?.description,
+                  slug: project?.slug
+                })
+              }}
+            >
+              <FaShareAlt size={'12px'} color={theme.colors.secondary} />
+              <Text
+                sx={{
+                  variant: 'text.medium',
+                  color: 'secondary',
+                  textDecoration: 'none',
+                  ml: '10px'
+                }}
+              >
+                Share
+              </Text>
+            </Flex>
           </Flex>
         </FloatingDonateView>
       </Flex>

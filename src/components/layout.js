@@ -6,25 +6,28 @@
  */
 
 import React from 'react'
+import './global.css'
 import PropTypes from 'prop-types'
 import { useStaticQuery, graphql } from 'gatsby'
-import { ThemeProvider, Flex, Image, Text } from 'theme-ui'
+import { ThemeProvider, Box, Button, Flex, Image, Text } from 'theme-ui'
 import { positions, Provider } from 'react-alert'
 import AlertTemplate from 'react-alert-template-mui'
 import InfoIcon from '../images/info_outline.png'
+import CornerLeave from '../images/corner-leave.png'
 import theme from '../gatsby-plugin-theme-ui/index'
 import Header from './header'
-import TorusProvider from '../contextProvider/torusProvider'
+import { WalletProvider } from '../contextProvider/WalletProvider'
 import GlobalProvider from '../contextProvider/globalProvider'
 import { PopupProvider } from '../contextProvider/popupProvider'
 
 import Dialog from './dialog'
+import GithubIssue from './GithubIssue'
 import Footer from './footer'
+import Toast from './toast'
 import Popup from './popup'
 import { Helmet } from 'react-helmet'
 import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
-import ProveWalletProvider from '../contextProvider/proveWalletProvider'
 import styled from '@emotion/styled'
 
 const StyledToastContainer = styled(ToastContainer)`
@@ -37,6 +40,12 @@ const StyledToastContainer = styled(ToastContainer)`
   }
   .Toastify__toast--info {
     border-left: 6px solid ${theme.colors.blue};
+  }
+  .Toastify__toast--dark {
+    background-color: ${theme.colors.primary};
+    .Toastify__close-button {
+      color: ${theme.colors.background};
+    }
   }
   .Toastify__toast--error {
     border-left: 6px solid ${theme.colors.red};
@@ -56,6 +65,7 @@ const AlertOptions = {
 
 const CookieBanner = styled(Flex)`
   position: fixed;
+  z-index: 4;
   left: 0;
   right: 0;
   bottom: 0;
@@ -70,11 +80,31 @@ const CookieBanner = styled(Flex)`
 `
 
 const CookiesBanner = () => {
-  const [cookiesAccepted, setCookiesAccepted] = React.useState(
-    typeof window !== 'undefined' &&
+  const [cookiesAccepted, setCookiesAccepted] = React.useState('none')
+  const [softLaunchSeen, setSoftLaunchSeen] = React.useState('none')
+  React.useEffect(() => {
+    const cookies =
+      typeof window !== 'undefined' &&
       window.localStorage.getItem('cookiesAccepted')
-  )
-  if (cookiesAccepted) return null
+    setCookiesAccepted(cookies)
+    const softLaunch =
+      typeof window !== 'undefined' &&
+      window.localStorage.getItem('softLaunchSeen')
+    if (!softLaunch) {
+      setSoftLaunchSeen('false')
+      // now the user has seen it
+      window.localStorage.setItem('softLaunchSeen', 'true')
+    } else {
+      setSoftLaunchSeen('true')
+    }
+  }, [])
+  if (softLaunchSeen === 'false') {
+    Toast({
+      content: `We're in Softlaunch mode`,
+      type: 'info'
+    })
+  }
+  if (cookiesAccepted || cookiesAccepted === 'none') return null
   // TODO: We may build this reusable for possible future banners on the app
   return (
     <CookieBanner
@@ -93,6 +123,7 @@ const CookiesBanner = () => {
         </Text>
       </Flex>
       <Text
+        id='cookies'
         onClick={() => {
           window.localStorage.setItem('cookiesAccepted', true)
           setCookiesAccepted(true)
@@ -106,6 +137,7 @@ const CookiesBanner = () => {
 }
 
 const Layout = ({ isHomePage, children, asDialog, noHeader, noFooter }) => {
+  const APIKEY = process.env.GATSBY_GOOGLE_MAPS_API_KEY
   const data = useStaticQuery(graphql`
     query SiteTitleQuery {
       site {
@@ -158,22 +190,68 @@ const Layout = ({ isHomePage, children, asDialog, noHeader, noFooter }) => {
           src='https://cdn.jsdelivr.net/npm/@toruslabs/torus-embed'
           crossOrigin='anonymous'
         />
+        <script
+          src={`https://maps.googleapis.com/maps/api/js?key=${APIKEY}&libraries=places&v=weekly`}
+          defer
+        />
+        <script type='text/javascript'>
+          {`
+          let map;
+          function initMap(setLocation) {
+              map = new google.maps.Map(document.getElementById('map'), {
+                  center: {lat: 0, lng: 0 },
+                  zoom: 1,
+                  mapTypeControl: false,
+                  panControl: false,
+                  zoomControl: false,
+                  streetViewControl: false
+              });
+              // Create the autocomplete object and associate it with the UI input control.
+              autocomplete = new google.maps.places.Autocomplete(
+                document.getElementById("autocomplete"),
+                {
+                  types: ["geocode"],
+                }  
+              );
+              places = new google.maps.places.PlacesService(map);
+              autocomplete.addListener("place_changed",function(e){
+                onPlaceChanged(setLocation);
+              });
+          }
+          function onPlaceChanged(setLocation) {
+            const place = autocomplete.getPlace();
+            if (place) {
+              if (place.geometry) {
+                map.panTo(place.geometry.location);
+                var marker = new google.maps.Marker({
+                  position: place.geometry.location,
+                  map: map,
+                  title: place.formatted_address
+                });
+                map.setZoom(13);
+                setLocation(place.formatted_address)
+              } else {
+                document.getElementById("autocomplete").placeholder = "Search a Location";
+              }
+            }
+          }
+        `}
+        </script>
       </Helmet>
-      <TorusProvider>
-        <ProveWalletProvider>
-          <GlobalProvider>
-            <ThemeProvider theme={theme}>
-              <Provider template={AlertTemplate} {...AlertOptions}>
-                <PopupProvider>
-                  <Template />
-                  <Popup />
-                </PopupProvider>
-              </Provider>
-            </ThemeProvider>
-          </GlobalProvider>
-        </ProveWalletProvider>
+      <WalletProvider>
+        <GlobalProvider>
+          <ThemeProvider theme={theme}>
+            <Provider template={AlertTemplate} {...AlertOptions}>
+              <PopupProvider>
+                <GithubIssue fixed={true} />
+                <Template />
+                <Popup />
+              </PopupProvider>
+            </Provider>
+          </ThemeProvider>
+        </GlobalProvider>
         <StyledToastContainer />
-      </TorusProvider>
+      </WalletProvider>
     </>
   )
 }

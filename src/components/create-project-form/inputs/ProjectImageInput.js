@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Label, Grid, Image, Text, Flex, Button } from 'theme-ui'
+import { Label, Grid, Box, Image, Text, Flex, Button } from 'theme-ui'
 import { animated } from 'react-spring'
 import { useDropzone } from 'react-dropzone'
+import theme from '../../../gatsby-plugin-theme-ui'
 import styled from '@emotion/styled'
 
 import ProjectImageGallery1 from '../../../images/svg/create/projectImageGallery1.svg'
@@ -11,8 +12,7 @@ import ProjectImageGallery4 from '../../../images/svg/create/projectImageGallery
 import placeHolder from '../../../images/placeholder.png'
 import { toBase64 } from '../../../utils'
 
-const Selection = styled(Button)`
-  background: unset;
+const Selection = styled(Box)`
   cursor: pointer;
   width: 80px;
   height: 80px;
@@ -20,20 +20,27 @@ const Selection = styled(Button)`
   margin: 4% 2% 0 0;
   border: 2px solid #dfdae8;
   border-radius: 8px;
+  background-color: ${theme.colors.background};
 `
 
 export const ProjectImageInput = ({
   register,
   currentValue,
-  animationStyle
+  animationStyle,
+  goBack
 }) => {
   const [image, setImage] = useState()
   const [displayImage, setDisplayImage] = useState(currentValue)
   const { getRootProps, getInputProps } = useDropzone({
     accept: 'image/*',
     multiple: false,
+    // maxSize: 16000, // This isn't working, bug with library
     onDrop: async acceptedFile => {
-      setDisplayImage(await toBase64(acceptedFile[0]))
+      try {
+        setDisplayImage(await toBase64(acceptedFile[0]))
+      } catch (error) {
+        console.log({ error })
+      }
     }
   })
 
@@ -44,6 +51,7 @@ export const ProjectImageInput = ({
           width: '100%',
           height: '100%',
           backgroundSize: 'cover',
+          backgroundColor: 'transparent',
           backgroundImage: `url('/assets/create/projectImageGallery${type.toString()}.svg')`
         }}
       />
@@ -75,7 +83,10 @@ export const ProjectImageInput = ({
           maxHeight: '270px',
           mt: '12px',
           p: '2.5%',
-          gap: '20px'
+          gap: '20px',
+          '&:hover': {
+            cursor: 'pointer'
+          }
         }}
       >
         <Flex
@@ -101,7 +112,7 @@ export const ProjectImageInput = ({
               src={placeHolder}
               sx={{ objectFit: 'cover', maxHeight: '150px' }}
             />
-          ) : displayImage.startsWith('data:') ? (
+          ) : displayImage?.startsWith('data:') ? (
             <Image
               src={displayImage}
               sx={{ objectFit: 'cover', maxHeight: '150px' }}
@@ -129,7 +140,11 @@ export const ProjectImageInput = ({
               Upload from computer
             </Text>
           </Text>
-          <Text sx={{ marginTop: '8px' }}>
+          <Text
+            sx={{
+              marginTop: '8px'
+            }}
+          >
             Suggested image size min. 1200px width. Image size up to 16mb.
           </Text>
         </Flex>
@@ -159,29 +174,59 @@ export const ProjectImageInput = ({
           )
         })}
       </Grid>
-      <Button
-        aria-label='Next'
+      <Flex
         sx={{
-          mt: '50px',
-          width: '180px',
-          height: '52px',
-          borderRadius: '48px',
-          cursor: 'pointer'
+          alignItems: 'flex-end',
+          justifyContent: 'flex-end',
+          flexDirection: 'row-reverse'
         }}
-        type='submit'
       >
-        <Text
+        <Button
+          aria-label='Next'
           sx={{
-            color: 'background',
-            fontFamily: 'body',
-            fontWeight: 'bold',
-            fontSize: 2,
-            letterSpacing: '4%'
+            mt: '50px',
+            width: '180px',
+            height: '52px',
+            borderRadius: '48px',
+            cursor: 'pointer'
           }}
+          type='submit'
         >
-          NEXT
-        </Text>
-      </Button>
+          <Text
+            sx={{
+              color: 'background',
+              fontFamily: 'body',
+              fontWeight: 'bold',
+              fontSize: 2,
+              letterSpacing: '4%'
+            }}
+          >
+            NEXT
+          </Text>
+        </Button>
+        <Button
+          aria-label='Back'
+          variant='nofill'
+          sx={{
+            width: '180px',
+            height: '52px',
+            borderRadius: '48px',
+            cursor: 'pointer'
+          }}
+          onClick={goBack}
+        >
+          <Text
+            sx={{
+              color: 'secondary',
+              fontFamily: 'body',
+              fontSize: 2,
+              letterSpacing: '4%'
+            }}
+          >
+            Back
+          </Text>
+        </Button>
+      </Flex>
     </animated.section>
   )
 }

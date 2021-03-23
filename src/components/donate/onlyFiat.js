@@ -1,7 +1,7 @@
 /** @jsx jsx */
 import React, { useState } from 'react'
 import { Button, Checkbox, Input, Flex, Label, Text, jsx } from 'theme-ui'
-import { useApolloClient } from '@apollo/react-hooks'
+import { useApolloClient } from '@apollo/client'
 import Tooltip from '../../components/tooltip'
 import styled from '@emotion/styled'
 import { loadStripe } from '@stripe/stripe-js'
@@ -321,7 +321,7 @@ const OnlyFiat = props => {
                 />
               )}
               <SummaryRow
-                title='Processing Fee: 2.9% + 0.30 USD'
+                title='Coming Soon'
                 amount={parseFloat(donation * 0.029 + 0.3).toFixed(2)}
                 style={{
                   borderBottom: '1px solid #6B7087',

@@ -3,9 +3,13 @@ import { Button, Text, jsx } from 'theme-ui'
 import { useContext, useState } from 'react'
 import styled from '@emotion/styled'
 import theme from '../../gatsby-plugin-theme-ui/index'
+import CopyToClipboard from '../copyToClipboard'
+import useComponentVisible from '../../utils/useComponentVisible'
+import Jdenticon from 'react-jdenticon'
 import { Link } from 'gatsby'
-import { TorusContext } from '../../contextProvider/torusProvider'
-import { ProveWalletContext } from '../../contextProvider/proveWalletProvider'
+import { useWallet } from '../../contextProvider/WalletProvider'
+
+import { FiExternalLink } from 'react-icons/fi'
 
 const AccountDetails = styled.div`
   width: 200px;
@@ -67,31 +71,75 @@ const Dot = styled.div`
 `
 
 const UserDetails = () => {
-  const [active, setActive] = useState(false)
+  const {
+    ref,
+    isComponentVisible,
+    setIsComponentVisible
+  } = useComponentVisible(false)
 
-  const { logout, user, balance, network } = useContext(TorusContext)
-  const { proveWallet, isWalletProved } = useContext(ProveWalletContext)
-
-  const address = (user?.addresses && user.addresses[0]) || ''
-  const truncAddress = `${address.substring(0, 14)}...${address.substring(
+  const {
+    isLoggedIn,
+    logout,
+    user,
+    balance,
+    currentNetwork,
+    currentChainId,
+    wallet
+  } = useWallet()
+  const address = isLoggedIn ? user.getWalletAddress() : '?'
+  const truncAddress = `${address.substring(0, 10)}...${address.substring(
     address.length - 4,
     address.length
   )}`
 
-  const handleMenu = e => {
-    if (active) {
-      setActive(false)
-    } else {
-      setActive(true)
+  const parseNetwork = () => {
+    let dotColor
+    console.log({ currentNetwork })
+    switch (currentNetwork) {
+      case 'main':
+        dotColor = 'greenishBlue'
+        break
+      case 'ropsten':
+        dotColor = 'ropstenPink'
+        break
+      case 'kovan':
+        dotColor = 'kovanPurple'
+        break
+      case 'rinkeby':
+        dotColor = 'rinkebyYellow'
+        break
+      case 'goerli':
+        dotColor = 'goerliBlue'
+        break
+      default:
+        dotColor = 'softGray'
     }
+    // special for xDAI
+    let isXDai = false
+    if (currentChainId === 100) {
+      dotColor = 'greenishBlue'
+      isXDai = true
+    }
+    return (
+      <MenuTitle
+        sx={{
+          variant: 'text.medium',
+          pb: 2,
+          color: 'secondary',
+          textTransform: 'capitalize'
+        }}
+      >
+        <Dot sx={{ backgroundColor: dotColor }} />
+        {isXDai ? 'xDai' : currentNetwork}
+      </MenuTitle>
+    )
   }
 
   const handleLogout = () => {
     logout()
   }
-
   return (
-    <div>
+    <div ref={ref}>
       <Button
         sx={{ variant: 'buttons.nofill' }}
         style={{
@@ -101,16 +149,23 @@ const UserDetails = () => {
           padding: '0.5rem',
           border: '0'
         }}
-        onClick={() => {
-          handleMenu()
-        }}
+        onClick={() => setIsComponentVisible(!isComponentVisible)}
       >
-        <img
-          alt=''
-          style={{ width: '30px', borderRadius: '15px' }}
-          src={user?.profileImage}
-          className='avatarimage'
-        />
+        {user?.avatar ? (
+          <img
+            alt=''
+            style={{
+              width: '30px',
+              height: '30px',
+              borderRadius: '15px'
+            }}
+            onerror={`this.onerror=null;this.src='https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRqenVtmZ7dQULkiedSFuZ_YPmNonJGLDYGHA&usqp=CAU';`}
+            src={user?.avatar}
+            className='avatarimage'
+          />
+        ) : (
+          <Jdenticon size='32' value={address} />
+        )}
 
         <Text
           p={1}
@@ -118,52 +173,45 @@ const UserDetails = () => {
             variant: 'text.default',
             fontWeight: 'normal',
             ml: 2,
-            color: 'secondary'
+            color: 'secondary',
+            textTransform: 'capitalize'
           }}
         >
-          {user?.name}
+          {user.getName()}
         </Text>
       </Button>
-      {active ? (
+      {isComponentVisible ? (
         <AccountDetails>
           <MenuTitle
             sx={{ variant: 'text.overlineSmall', pt: 2, color: 'bodyDark' }}
           >
             Wallet Address
           </MenuTitle>
-          <MenuItem
-            sx={{ variant: 'text.medium', color: 'secondary' }}
-            onClick={() => navigator.clipboard.writeText(address)}
-          >
+          <MenuTitle sx={{ variant: 'text.medium', color: 'secondary' }}>
             {truncAddress}
-          </MenuItem>
-          <MenuTitle
-            sx={{
-              variant: 'text.small',
-              pb: 2,
-              '&:focus': { color: 'red' }
-            }}
-            className='balance'
-          >
-            Balance: {balance ? `${balance} ETH` : ''}
           </MenuTitle>
+          {balance ? (
+            <MenuTitle
+              sx={{
+                variant: 'text.small',
+                pb: 2,
+                '&:focus': { color: 'red' }
+              }}
+              className='balance'
+            >
+              Balance: {balance ? `${balance} ETH` : ''}
+            </MenuTitle>
+          ) : null}
           <MenuTitle
             sx={{ variant: 'text.overlineSmall', pt: 2, color: 'bodyDark' }}
           >
-            Torus Network
+            {wallet
+              ? wallet.isTorus
+                ? 'Torus Network'
+                : 'Metamask Network'
+              : 'No network'}
           </MenuTitle>
-          <MenuTitle
-            sx={{
-              variant: 'text.medium',
-              pb: 2,
-              color: 'secondary',
-              textTransform: 'capitalize'
-            }}
-            onClick={() => navigator.clipboard.writeText(address)}
-          >
-            <Dot sx={{ backgroundColor: network ? 'greenishBlue' : 'red' }} />
-            {network || 'No network'}
-          </MenuTitle>
+          {parseNetwork()}
           <Link
             to='/account'
             sx={{ textDecoration: 'none', textDecorationLine: 'none' }}
@@ -177,33 +225,38 @@ const UserDetails = () => {
               My Account
             </MenuItem>
           </Link>
-          {!isWalletProved && (
+          <a
+            href={
+              wallet?.isTorus
+                ? wallet?.supportLink
+                : `${wallet?.supportLink}${address}`
+            }
+            target='_blank'
+            rel='noopener noreferrer'
+            sx={{ textDecoration: 'none' }}
+          >
             <MenuItem
               sx={{
                 variant: 'text.medium'
               }}
-              onClick={proveWallet}
-              className='boxheight'
+              className='shadow boxheight'
             >
-              Verify Your Wallet
+              My Wallet <FiExternalLink size='18px' />
             </MenuItem>
-          )}
-          <MenuItem
-            sx={{
-              variant: 'text.medium'
-            }}
-            className='shadow boxheight'
+          </a>
+          <Link
+            to='/account?data=all&view=projects'
+            sx={{ textDecoration: 'none', textDecorationLine: 'none' }}
           >
-            Settings
-          </MenuItem>
-          <MenuItem
-            sx={{
-              variant: 'text.medium'
-            }}
-            className='shadow boxheight'
-          >
-            My Projects
-          </MenuItem>
+            <MenuItem
+              sx={{
+                variant: 'text.medium'
+              }}
+              className='shadow boxheight'
+            >
+              My Projects
+            </MenuItem>
+          </Link>
           <MenuLink
             href='https://github.com/Giveth/giveth-2/issues/new/choose'
             target='_blank'

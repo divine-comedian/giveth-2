@@ -1,17 +1,33 @@
 /** @jsx jsx */
 import React, { useState, useEffect } from 'react'
+import styled from '@emotion/styled'
+import { useMutation } from '@apollo/client'
 import { Button, Flex, Label, Text, jsx } from 'theme-ui'
-import { useApolloClient } from '@apollo/react-hooks'
+import { useApolloClient } from '@apollo/client'
+import { PopupContext } from '../../contextProvider/popupProvider'
 import { REGISTER_PROJECT_DONATION } from '../../apollo/gql/projects'
+import { SAVE_DONATION } from '../../apollo/gql/donations'
+
 import Modal from '../modal'
+import Select from '../selectWIthAutocomplete'
 import QRCode from 'qrcode.react'
+import { BsCaretDownFill } from 'react-icons/bs'
+import { ensRegex, getERC20List } from '../../utils'
+import LoadingModal from '../../components/loadingModal'
+import useComponentVisible from '../../utils/useComponentVisible'
 import { initOnboard, initNotify } from '../../services/onBoard'
+import CopyToClipboard from '../copyToClipboard'
 import SVGLogo from '../../images/svg/donation/qr.svg'
 import { ethers } from 'ethers'
+import theme from '../../gatsby-plugin-theme-ui'
 import getSigner from '../../services/ethersSigner'
 // import Tooltip from '../../components/tooltip'
 import Toast from '../../components/toast'
-import styled from '@emotion/styled'
+import { toast } from 'react-toastify'
+import InProgressModal from './inProgressModal'
+import { useWallet } from '../../contextProvider/WalletProvider'
+import * as transaction from '../../services/transaction'
+import { saveDonation, saveDonationTransaction } from '../../services/donation'
 
 let provider
 
@@ -52,7 +68,7 @@ const InputComponent = styled.input`
   background: white;
   border: none;
   border-radius: 12px;
-  padding: 1rem 0.4rem 1rem 4rem;
+  padding: 1rem 0.4rem 1rem 5rem;
   outline: none;
 `
 
@@ -82,65 +98,124 @@ const OnlyCrypto = props => {
   // ON BOARD
   const [wallet, setWallet] = useState(null)
   const [onboard, setOnboard] = useState(null)
+  const [mainToken, setMainToken] = useState(null)
+  const [selectedToken, setSelectedToken] = useState(null)
+  const [tokenSymbol, setTokenSymbol] = useState(null)
   const [notify, setNotify] = useState(null)
   const { project } = props
-  const [ethPrice, setEthPrice] = useState(1)
+  const [tokenPrice, setTokenPrice] = useState(1)
+  const [gasPrice, setGasPrice] = useState(null)
+  const [gasETHPrice, setGasETHPrice] = useState(null)
   const [amountTyped, setAmountTyped] = useState(null)
   const [donateToGiveth, setDonateToGiveth] = useState(false)
+  const [inProgress, setInProgress] = useState(false)
+  const [txHash, setTxHash] = useState(null)
+  const [erc20List, setErc20List] = useState([])
   const [anonymous, setAnonymous] = useState(false)
   const [modalIsOpen, setIsOpen] = useState(false)
+  const usePopup = React.useContext(PopupContext)
+  const {
+    ref,
+    isComponentVisible,
+    setIsComponentVisible
+  } = useComponentVisible(false)
+  const {
+    isLoggedIn,
+    currentChainId,
+    currentNetwork,
+    sendTransaction,
+    user,
+    ready,
+    wallet: userWallet
+  } = useWallet()
 
   const client = useApolloClient()
+  const { triggerPopup } = usePopup
 
   useEffect(() => {
     const init = async () => {
       fetch(
-        'https://min-api.cryptocompare.com/data/price?fsym=ETH&tsyms=USD,EUR,CNY,JPY,GBP'
+        `https://min-api.cryptocompare.com/data/price?fsym=${tokenSymbol}&tsyms=USD,EUR,CNY,JPY,GBP&api_key=${process.env.GATSBY_CRYPTOCOMPARE_KEY}`
       )
         .then(response => response.json())
-        .then(data => setEthPrice(data.USD))
+        .then(data => setTokenPrice(data.USD))
       setOnboard(
-        initOnboard({
-          wallet: wallet => {
-            if (wallet.provider) {
-              setWallet(wallet)
+        initOnboard(
+          {
+            wallet: wallet => {
+              if (wallet.provider) {
+                setWallet(wallet)
 
-              const ethersProvider = new ethers.providers.Web3Provider(
-                wallet.provider
-              )
-              provider = ethersProvider
-              window.localStorage.setItem('selectedWallet', wallet.name)
-            } else {
-              provider = null
-              setWallet({})
+                const ethersProvider = new ethers.providers.Web3Provider(
+                  wallet.provider
+                )
+                provider = ethersProvider
+                window.localStorage.setItem('selectedWallet', wallet.name)
+              } else {
+                provider = null
+                setWallet({})
+              }
             }
-          }
-        })
+          },
+          currentChainId === 100 ? currentChainId : null
+        )
       )
       setNotify(initNotify())
     }
-    console.log(ethers.utils.parseEther('1.0'))
+    // console.log(ethers.utils.parseEther('1.0'))
     init()
-  }, [])
+  }, [tokenSymbol, currentChainId])
 
   useEffect(() => {
     const previouslySelectedWallet = window.localStorage.getItem(
       'selectedWallet'
     )
-
     if (previouslySelectedWallet && onboard) {
       onboard.walletSelect(previouslySelectedWallet)
     }
-  }, [onboard])
+    const mainToken = currentChainId === 100 ? 'XDAI' : 'ETH'
+    const currentMainToken = {
+      symbol: mainToken,
+      name: null
+    }
+    setMainToken(mainToken)
+    setSelectedToken(currentMainToken)
+    setTokenSymbol(mainToken)
+
+    const tokenList = getERC20List(currentChainId)
+    const formattedTokenList = tokenList?.tokens
+      ? Array.from(tokenList?.tokens, token => {
+          return {
+            value: token,
+            label: token?.symbol
+          }
+        })
+      : []
+    setErc20List([
+      {
+        value: currentMainToken,
+        label: mainToken
+      },
+      ...formattedTokenList
+    ])
+    // GET GAS
+    userWallet?.web3?.eth.getGasPrice().then(wei => {
+      const gwei = userWallet.web3.utils.fromWei(wei, 'gwei')
+      const ethFromGwei = userWallet.web3.utils.fromWei(wei, 'ether')
+      gwei && setGasPrice(Number(gwei))
+      ethFromGwei && setGasETHPrice(Number(ethFromGwei) * 21000)
+    })
+  }, [currentChainId])
 
   const donation = parseFloat(amountTyped)
   const givethFee =
-    Math.round((GIVETH_DONATION_AMOUNT * 100.0) / ethPrice) / 100
+    Math.round((GIVETH_DONATION_AMOUNT * 100.0) / tokenPrice) / 100
 
   const subtotal = donation + (donateToGiveth === true ? givethFee : 0)
 
   const eth2usd = eth => {
-    return (eth * ethPrice).toFixed(2)
+    if (!tokenPrice) return ''
+    return `$ ${(eth * tokenPrice).toFixed(2)}`
   }
 
   const SummaryRow = ({ title, amount, style }) => {
@@ -158,10 +233,22 @@ const OnlyCrypto = props => {
         </Text>
         {amount?.length === 2 ? (
           <Flex sx={{ alignItems: 'center' }}>
-            <Text sx={{ variant: 'text.small', color: 'anotherGrey', pr: 2 }}>
+            <Text
+              sx={{
+                variant: 'text.small',
+                color: 'anotherGrey',
+                paddingRight: '5px'
+              }}
+            >
               {amount[0]}
             </Text>
-            <Text sx={{ variant: 'text.medium', color: 'background' }}>
+            <Text
+              sx={{
+                variant: 'text.medium',
+                color: 'background',
+                textAlign: 'end'
+              }}
+            >
               {' '}
               {amount[1]}
             </Text>
@@ -181,170 +268,155 @@ const OnlyCrypto = props => {
     )
   }
 
-  const setProvider = async () => {
-    await onboard.walletSelect()
-    await onboard.walletCheck()
-  }
-
   const readyToTransact = async () => {
     onboard.walletReset()
     const walletSelected = await onboard.walletSelect()
+
     if (!walletSelected) return false
     const ready = await onboard.walletCheck()
-    console.log({ ready })
+
     return ready
   }
 
-  // FOR REGULAR TX
-  const sendTx = async () => {
+  const confirmDonation = async isFromOwnProvider => {
     try {
-      const signer = getSigner(provider)
-      console.log(ethers.utils.parseEther(subtotal.toString()))
-      const { hash } = await signer.sendTransaction({
-        to: project?.walletAddress,
-        value: ethers.utils.parseEther(subtotal.toString())
+      let fromOwnProvider = isFromOwnProvider
+      // Until we accept every other network we will offer xDAI if detected only through metamask
+      if (isXDAI) {
+        fromOwnProvider = true
+      }
+      if (!project?.walletAddress) {
+        return Toast({
+          content: 'There is no eth address assigned for this project',
+          type: 'error'
+        })
+      }
+      if (!amountTyped || parseFloat(amountTyped) <= 0) {
+        return Toast({ content: 'Please set an amount', type: 'warn' })
+      }
+      if (!fromOwnProvider) {
+        // Is not logged in, should try donation through onBoard
+        const ready = await readyToTransact()
+        if (!ready) return
+      }
+      Toast({
+        content: 'Donation in progress...',
+        type: 'dark',
+        customPosition: 'top-left',
+        isLoading: true,
+        noAutoClose: true
       })
-      props.setHashSent({ hash, subtotal })
-      console.log({ txId: hash?.toString(), anonymous: false })
-      // Send tx hash to our graph
-      // try {
-      //   const { data } = await client.mutate({
-      //     mutation: REGISTER_PROJECT_DONATION,
-      //     variables: {
-      //       txId: hash?.toString(),
-      //       anonymous: false
-      //     }
-      //   })
-      //   console.log('BO', { data })
-      // } catch (error) {
-      //   console.log({ error })
-      // }
 
-      // DO THIS ONLY IN PROD BECAUSE WE HAVE A LIMIT
-      if (process.env.GATSBY_NETWORK === 'ropsten') return
+      const toAddress = ensRegex(project?.walletAddress)
+        ? await provider.resolveName(project?.walletAddress)
+        : project?.walletAddress
 
-      notify.config({ desktopPosition: 'topRight' })
-      const { emitter } = notify.hash(hash)
+      const token = tokenSymbol
+      const fromAddress = isLoggedIn ? user.getWalletAddress() : null
 
-      emitter.on('txPool', transaction => {
-        return {
-          // message: `Your transaction is pending, click <a href="https://rinkeby.etherscan.io/tx/${transaction.hash}" rel="noopener noreferrer" target="_blank">here</a> for more info.`,
-          // or you could use onclick for when someone clicks on the notification itself
-          onclick: () =>
-            window.open(`https://ropsten.etherscan.io/tx/${transaction.hash}`)
+      await transaction.send(
+        toAddress,
+        token !== mainToken ? selectedToken?.address : false,
+        subtotal,
+        fromOwnProvider,
+        isLoggedIn,
+        sendTransaction,
+        provider,
+        {
+          onTransactionHash: async transactionHash => {
+            const instantReceipt = await transaction.getTxFromHash(
+              transactionHash
+            )
+            //Save initial txn details to db
+            const {
+              donationId,
+              savedDonation,
+              saveDonationErrors
+            } = await saveDonation(
+              fromAddress || instantReceipt?.from,
+              toAddress,
+              transactionHash,
+              currentChainId,
+              Number(subtotal),
+              token,
+              Number(project.id)
+            )
+            console.log('DONATION RESPONSE: ', {
+              donationId,
+              savedDonation,
+              saveDonationErrors
+            })
+            // onTransactionHash callback for event emitter
+            transaction.confirmEtherTransaction(transactionHash, res => {
+              if (!res) return
+              toast.dismiss()
+              if (res?.tooSlow) {
+                // Tx is being too slow
+                toast.dismiss()
+                setTxHash(transactionHash)
+                setInProgress(true)
+              } else if (res?.status) {
+                // Tx was successful
+                props.setHashSent({ transactionHash, tokenSymbol, subtotal })
+              } else {
+                // EVM reverted the transaction, it failed
+                Toast({
+                  content: 'Transaction failed',
+                  type: 'error'
+                })
+              }
+            })
+            await saveDonationTransaction(transactionHash, donationId)
+          },
+          onReceiptGenerated: receipt => {
+            props.setHashSent({
+              transactionHash: receipt?.transactionHash,
+              subtotal,
+              tokenSymbol
+            })
+          },
+          onError: error => {
+            // the outside catch handles any error here
+            // Toast({
+            //   content: error?.error?.message || error?.message || error,
+            //   type: 'error'
+            // })
+          }
         }
-      })
+      )
 
-      emitter.on('txSent', console.log)
-      emitter.on('txConfirmed', console.log)
-      emitter.on('txSpeedUp', console.log)
-      emitter.on('txCancel', console.log)
-      emitter.on('txFailed', console.log)
-
-      emitter.on('all', event => {
-        console.log('ALLLLLLL', event)
-      })
+      // Commented notify and instead we are using our own service
+      // transaction.notify(transactionHash)
     } catch (error) {
-      console.log({ error })
-      return Toast({ content: error?.message, type: 'error' })
+      toast.dismiss()
+      if (
+        error?.data?.code === 'INSUFFICIENT_FUNDS' ||
+        error?.data?.code === 'UNPREDICTABLE_GAS_LIMIT'
+      ) {
+        // TODO: change this to custom alert
+        return triggerPopup('InsufficientFunds')
+      }
+      return Toast({
+        content:
+          error?.data?.message ||
+          error?.error?.message ||
+          error?.message ||
+          error,
+        type: 'error'
+      })
     }
   }
 
-  // Contract call example
-  // const sendTx = async () => {
-  //   try {
-  //     await setProvider()
-  //     const signer = getSigner(provider)
-  //     console.log(ethers.utils.parseEther(subtotal.toString()))
-
-  //     const abi = [
-  //       {
-  //         anonymous: false,
-  //         inputs: [
-  //           {
-  //             indexed: false,
-  //             internalType: 'address',
-  //             name: 'origin',
-  //             type: 'address'
-  //           },
-  //           {
-  //             indexed: false,
-  //             internalType: 'address',
-  //             name: 'target',
-  //             type: 'address'
-  //           },
-  //           {
-  //             indexed: false,
-  //             internalType: 'uint256',
-  //             name: 'amount',
-  //             type: 'uint256'
-  //           }
-  //         ],
-  //         name: 'Transfer',
-  //         type: 'event'
-  //       },
-  //       {
-  //         constant: false,
-  //         inputs: [
-  //           {
-  //             internalType: 'address payable',
-  //             name: 'target',
-  //             type: 'address'
-  //           }
-  //         ],
-  //         name: 'transfer',
-  //         outputs: [],
-  //         payable: true,
-  //         stateMutability: 'payable',
-  //         type: 'function'
-  //       }
-  //     ]
-
-  //     const contractAddress = '0x4248bfcfae44942D1C26296CCB554C66926E639D'
-
-  //     const contract = new ethers.Contract(contractAddress, abi, signer)
-
-  //     const overrides = {
-  //       gasLimit: 500000,
-  //       gasPrice: ethers.BigNumber.from('20000000000'),
-  //       value: ethers.utils.parseEther(subtotal.toString())
-  //     }
-
-  //     const { hash } = await contract.transfer(
-  //       '0x3Db054B9a0D6A76db171542bb049999dC191B817',
-  //       overrides
-  //     )
-
-  //     console.log({ hash })
-
-  //     notify.config({ desktopPosition: 'topRight' })
-  //     const { emitter } = notify.hash(hash)
-
-  //     emitter.on('txPool', transaction => {
-  //       return {
-  //         // message: `Your transaction is pending, click <a href="https://rinkeby.etherscan.io/tx/${transaction.hash}" rel="noopener noreferrer" target="_blank">here</a> for more info.`,
-  //         // or you could use onclick for when someone clicks on the notification itself
-  //         onclick: () =>
-  //           window.open(`https://ropsten.etherscan.io/tx/${transaction.hash}`)
-  //       }
-  //     })
-
-  //     emitter.on('txSent', console.log)
-  //     emitter.on('txConfirmed', console.log)
-  //     emitter.on('txSpeedUp', console.log)
-  //     emitter.on('txCancel', console.log)
-  //     emitter.on('txFailed', console.log)
-
-  //     emitter.on('all', event => {
-  //       console.log('ALLLLLLL', event)
-  //     })
-  //   } catch (error) {
-  //     console.log({ error })
-  //   }
-  // }
+  const isMainnet = currentChainId === 1
+  const isXDAI = currentChainId === 100
 
   return (
-    <Content>
+    <Content ref={ref}>
+      <InProgressModal
+        showModal={inProgress}
+        setShowModal={val => setInProgress(val)}
+        txHash={txHash}
+      />
       <Modal
         isOpen={modalIsOpen}
         onRequestClose={() => setIsOpen(false)}
@@ -354,59 +426,108 @@ const OnlyCrypto = props => {
           sx={{
             flexDirection: 'column',
             alignItems: 'center',
-            pt: 5,
+            py: 5,
             px: 4,
             maxWidth: ['85vw', '60vw', '60vw'],
             textAlign: 'center'
           }}
         >
-          <QRCode value={project?.walletAddress} size={250} />
-          <Text sx={{ variant: ['headings.h5', 'headings.h5'], mt: 4, mb: 2 }}>
-            Donate to {project?.title}
-          </Text>
-          <Text sx={{ variant: ['headings.h6', 'headings.h6'] }}>
-            send ETH or ERC20 tokens using this address
-          </Text>
           <Text
             sx={{
-              variant: ['text.medium', 'text.large'],
-              fontWeight: 'bold',
-              py: 4
+              color: 'secondary',
+              variant: ['headings.h4', 'headings.h4'],
+              mt: 2,
+              mb: 4
             }}
           >
-            {project?.walletAddress}
+            Support {project?.title}
           </Text>
-          <Button
-            onClick={() => setIsOpen(false)}
+          <QRCode value={project?.walletAddress} size={250} />
+          <Text sx={{ mt: 4, variant: 'text.default', color: 'secondary' }}>
+            Please send ETH or ERC20 tokens using this address
+          </Text>
+          <Flex
             sx={{
-              variant: 'buttons.default',
-              padding: '1.063rem 7.375rem',
-              mt: 2
+              backgroundColor: 'lightGray',
+              alignItems: 'center',
+              px: 3,
+              mt: 3
             }}
           >
-            Close
-          </Button>
+            <Text
+              sx={{
+                variant: 'text.default',
+                color: 'secondary',
+                py: 2
+              }}
+            >
+              {project?.walletAddress}
+            </Text>
+            <CopyToClipboard size='18px' text={project?.walletAddress} />
+          </Flex>
         </Flex>
+        <Text
+          onClick={() => setIsOpen(false)}
+          sx={{
+            cursor: 'pointer',
+            color: 'secondary',
+            position: 'absolute',
+            top: '20px',
+            right: '24px',
+            variant: 'text.default'
+          }}
+        >
+          Close
+        </Text>
       </Modal>
       <AmountSection>
         <AmountContainer sx={{ width: ['100%', '100%'] }}>
-          <Text sx={{ variant: 'text.large', mb: 1, color: 'background' }}>
-            Enter your Ether amount
+          <Text sx={{ variant: 'text.large', mb: 3, color: 'background' }}>
+            Enter your {tokenSymbol} amount
           </Text>
-          <Text sx={{ variant: 'text.large', color: 'anotherGrey', mb: 4 }}>
-            {ethPrice && `1 ETH ≈ USD $${ethPrice}`}
-          </Text>
+          {isMainnet && (
+            <Text sx={{ variant: 'text.large', color: 'anotherGrey', mb: 4 }}>
+              {tokenPrice &&
+                tokenSymbol &&
+                `1 ${tokenSymbol} ≈ USD $${tokenPrice}`}
+            </Text>
+          )}
           <OpenAmount>
-            <Text
+            <Flex
+              onClick={() => setIsComponentVisible(!isComponentVisible)}
               sx={{
-                variant: 'text.large',
-                color: 'secondary',
+                alignItems: 'center',
                 position: 'absolute',
+                cursor: 'pointer',
                 ml: 3
               }}
             >
-              ETH
-            </Text>
+              <Text sx={{ mr: 2 }}>{tokenSymbol}</Text>
+              <BsCaretDownFill size='12px' color={theme.colors.secondary} />
+            </Flex>
+
+            {isComponentVisible && (
+              <Flex
+                sx={{
+                  position: 'absolute',
+                  backgroundColor: 'background',
+                  marginTop: '100px'
+                }}
+              >
+                <Select
+                  width='200px'
+                  content={erc20List}
+                  isTokenList
+                  menuIsOpen
+                  onSelect={i => {
+                    setSelectedToken(i?.value || selectedToken)
+                    setTokenSymbol(i?.label || tokenSymbol)
+                    setIsComponentVisible(false)
+                  }}
+                  placeholder='search for a token'
+                />
+              </Flex>
+            )}
             <InputComponent
               sx={{
                 variant: 'text.large',
@@ -474,8 +595,8 @@ const OnlyCrypto = props => {
               <SummaryRow
                 title={`Support ${project?.title}`}
                 amount={[
-                  `$${eth2usd(donation)}`,
-                  `ETH ${parseFloat(donation)}`
+                  `${eth2usd(donation)}`,
+                  `${selectedToken?.symbol} ${parseFloat(donation)}`
                 ]}
               />
               {donateToGiveth && (
@@ -483,18 +604,21 @@ const OnlyCrypto = props => {
                   title='Support Giveth'
                   amount={[
                     `$${GIVETH_DONATION_AMOUNT}`,
-                    `≈ ETH ${(GIVETH_DONATION_AMOUNT / ethPrice).toFixed(2)}`
+                    `≈ ${selectedToken?.symbol} ${(
+                      GIVETH_DONATION_AMOUNT / tokenPrice
+                    ).toFixed(2)}`
                   ]}
                 />
               )}
-              <SummaryRow
-                title='Processing Fee'
-                amount={['Network Fee Only']}
-                style={{
-                  borderBottom: '1px solid #6B7087',
-                  padding: '0 0 18px 0'
-                }}
-              />
+              {gasPrice && (
+                <SummaryRow
+                  title='Network Fee'
+                  amount={[
+                    'Gas Price',
+                    `GWEI ${parseFloat(gasPrice).toFixed(2)}`
+                  ]}
+                />
+              )}
               <Text
                 sx={{
                   variant: 'text.medium',
@@ -502,7 +626,16 @@ const OnlyCrypto = props => {
                   textAlign: 'right'
                 }}
               >
-                ETH {parseFloat(subtotal)}
+                {selectedToken?.symbol === 'ETH'
+                  ? `${selectedToken?.symbol} ${parseFloat(
+                      subtotal + gasETHPrice
+                    ).toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 6
+                    })}`
+                  : `${selectedToken?.symbol} ${parseFloat(subtotal).toFixed(
+                      2
+                    )}`}
               </Text>
             </Summary>
           )}
@@ -514,29 +647,36 @@ const OnlyCrypto = props => {
             textAlign: 'center'
           }}
         >
-          <Button
-            onClick={async () => {
-              if (!project?.walletAddress) {
-                return Toast({
-                  content: 'There is no eth address assigned for this project',
-                  type: 'error'
-                })
-              }
-              if (!amountTyped || parseFloat(amountTyped) <= 0) {
-                return Toast({ content: 'Please set an amount', type: 'warn' })
-              }
-              const ready = await readyToTransact()
-              if (!ready) return
-              sendTx()
-            }}
-            sx={{
-              variant: 'buttons.default',
-              padding: '1.063rem 7.375rem',
-              mt: 2
-            }}
-          >
-            DONATE
-          </Button>
+          <Flex sx={{ flexDirection: 'column' }}>
+            <Button
+              onClick={() => confirmDonation(isLoggedIn && ready)}
+              sx={{
+                variant: 'buttons.default',
+                padding: '1.063rem 7.375rem',
+                mt: 2,
+                textTransform: 'uppercase'
+              }}
+            >
+              Donate
+            </Button>
+            {isLoggedIn && ready && !isXDAI && (
+              <Text
+                sx={{
+                  mt: 2,
+                  mx: 'auto',
+                  cursor: 'pointer',
+                  color: 'background',
+                  '&:hover': {
+                    color: 'accent'
+                  }
+                }}
+                onClick={() => confirmDonation(false)}
+              >
+                click here to use another wallet
+              </Text>
+            )}
+          </Flex>
+
           <SVGLogo
             onClick={() => setIsOpen(true)}
             sx={{ cursor: 'pointer', ml: 3 }}

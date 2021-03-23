@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useContext, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import {
   Flex,
@@ -13,106 +13,52 @@ import {
 import Web3 from 'web3'
 import { BiArrowBack } from 'react-icons/bi'
 import theme from '../../../gatsby-plugin-theme-ui/index'
-import { useApolloClient } from '@apollo/react-hooks'
+import { useApolloClient, useQuery } from '@apollo/client'
 import {
   GET_LINK_BANK_CREATION,
   EDIT_PROJECT,
   GET_PROJECT_BY_ADDRESS,
   FETCH_PROJECT_BY_SLUG
 } from '../../../apollo/gql/projects'
+import { toggleProjectActivation } from '../../../services/project'
 import LoadingModal from '../../loadingModal'
 import ConfirmationModal from './confirmationModal'
 import { getImageFile } from '../../../utils/index'
 import { categoryList } from '../../../utils/constants'
+import { useWallet } from '../../../contextProvider/WalletProvider'
 import ImageSection from './imageSection'
 import styled from '@emotion/styled'
 import Toast from '../../toast'
+import { getWallet } from '../../../wallets'
+let wallet = null
+let web3 = null
 
 const CustomInput = styled(Input)`
   color: ${theme.colors.secondary};
 `
 
-function ProjectEdition(props) {
-  const { goBack } = props
-  const [showModal, setShowModal] = useState(false)
-  const [showCancelModal, setCancelModal] = useState(false)
-  const [project, setProject] = useState(props?.project)
+function ProjectEditionForm(props) {
+  const {
+    goBack,
+    setCancelModal,
+    setShowModal,
+    updateProject,
+    project,
+    client,
+    mapLocation,
+    setMapLocation
+  } = props
+
   const [loading, setLoading] = useState(false)
-  const { title, admin, description, walletAddress } = project
   const [categories, setCategories] = useState(null)
-  const client = useApolloClient()
+  const [isActive, setIsActive] = useState(null)
+
   const { register, handleSubmit, errors } = useForm() // initialize the hook
 
-  const onSubmit = async data => {
-    console.log({ project, data })
-    setLoading(true)
-    // Validate eth address
-    if (project?.walletAddress !== data.editWalletAddress) {
-      if (
-        data?.editWalletAddress?.length !== 42 ||
-        !Web3.utils.isAddress(data?.editWalletAddress)
-      ) {
-        return Toast({ content: 'Eth address not valid', type: 'error' })
-      }
-      // CHECK IF WALLET IS ALREADY TAKEN FOR A PROJECT
-      const res = await client.query({
-        query: GET_PROJECT_BY_ADDRESS,
-        variables: {
-          address: data?.editWalletAddress
-        }
-      })
-      console.log({ res })
-      if (res?.data?.projectByAddress) {
-        return Toast({
-          content: 'this eth address is already being used for a project',
-          type: 'error'
-        })
-      }
-    }
-
-    const projectCategories = []
-    for (const category in categoryList) {
-      const name = categoryList[category]?.name
-      if (data[name]) {
-        projectCategories.push(categoryList[category].name)
-      }
-    }
-
-    const projectData = {
-      title: data.editTitle,
-      description: data.editDescription,
-      admin: project.admin,
-      // impactLocation: project,
-      categories: projectCategories,
-      walletAddress: Web3.utils.toChecksumAddress(data.editWalletAddress)
-    }
-
-    // Validate Image
-    console.log({ data })
-    if (data?.editImage && project?.image !== data?.editImage) {
-      if (data?.editImage.length === 1) {
-        projectData.imageStatic = data.editImage
-      } else {
-        //download image to send
-        const imageFile = await getImageFile(data.editImage, data?.editTitle)
-        projectData.imageUpload = imageFile
-      }
-    }
-    try {
-      const edit = await client.mutate({
-        mutation: EDIT_PROJECT,
-        variables: {
-          newProjectData: projectData,
-          projectId: parseFloat(project?.id)
-        }
-      })
-      console.log({ edit })
-      setLoading(false)
-      setShowModal(true)
-    } catch (error) {
-      console.log({ error })
-    }
-  }
+  useEffect(() => {
+    setCategories(project?.categories)
+    setIsActive(project?.status?.id === '5')
+  }, [project])
 
   const connectBankAccount = async () => {
     try {
@@ -150,47 +96,71 @@ function ProjectEdition(props) {
       </Label>
     )
   }
-
-  useEffect(() => {
-    const setup = async () => {
-      try {
-        if (typeof project === 'string' && !loading) {
-          // fetch
-          setLoading(true)
-          const { data } = await client.query({
-            query: FETCH_PROJECT_BY_SLUG,
-            variables: {
-              slug: project
-            }
-          })
-          setCategories(data?.projectBySlug?.categories)
-          setProject(data?.projectBySlug)
-          setLoading(false)
-          console.log({ data })
-        }
-      } catch (error) {
-        console.log({ error })
-      }
-    }
-    setup()
-  }, [project])
-
+  console.log({ project, isActive })
   return (
     <>
       {loading && <LoadingModal isOpen={loading} />}
-      <Flex sx={{ alignItems: 'center' }}>
-        <BiArrowBack
-          color={theme.colors.secondary}
-          style={{ marginRight: 2 }}
-        />
-        <Text
-          onClick={goBack}
-          sx={{ fontFamily: 'body', color: 'secondary', cursor: 'pointer' }}
+      <Flex sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <Flex>
+          <BiArrowBack
+            color={theme.colors.secondary}
+            style={{ marginRight: 2 }}
+          />
+          <Text
+            onClick={goBack}
+            sx={{ fontFamily: 'body', color: 'secondary', cursor: 'pointer' }}
+          >
+            My Projects
+          </Text>
+        </Flex>
+
+        <form
+          onSubmit={handleSubmit((data, e) => {
+            const res = toggleProjectActivation(data, isActive, msg =>
+              Toast({ content: msg, type: 'success' })
+            )
+            if (res) {
+              setIsActive(!isActive)
+            }
+          })}
         >
-          My Projects
-        </Text>
+          <input
+            type='hidden'
+            name='projectId'
+            ref={register}
+            value={project.id}
+          />
+          {project?.status && (
+            <Button
+              aria-label='Next'
+              sx={{
+                my: '20px',
+                width: '240px',
+                height: '52px',
+                borderRadius: '48px',
+                cursor: 'pointer'
+              }}
+              type='submit'
+            >
+              {' '}
+              <Text
+                sx={{
+                  fontFamily: 'body',
+                  fontWeight: 'bold',
+                  fontSize: 2,
+                  letterSpacing: '4%',
+                  textTransform: 'uppercase',
+                  textAlign: 'center',
+                  color: 'white'
+                }}
+              >
+                {`${isActive ? 'Deactivate' : 'Activate'}`} project
+              </Text>
+            </Button>
+          )}
+        </form>
       </Flex>
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form onSubmit={handleSubmit(updateProject)}>
         <>
           <ImageSection image={project?.image} register={register} />
           <Flex sx={{ width: '70%', flexDirection: 'column' }}>
@@ -198,7 +168,7 @@ function ProjectEdition(props) {
             <CustomInput
               name='editTitle'
               ref={register}
-              defaultValue={title}
+              defaultValue={project?.title}
             />{' '}
             {/* <CustomLabel title='Project Admin' htmlFor='editAdmin' />
             <CustomInput name='editAdmin' ref={register} defaultValue={admin} /> */}
@@ -214,50 +184,102 @@ function ProjectEdition(props) {
               }}
               id='editDescription'
               name='editDescription'
-              defaultValue={description}
+              defaultValue={project?.description}
               ref={register}
               rows={12}
             />
             <CustomLabel title='Category' htmlFor='editCategory' />
-            <Box>
-              {categoryList.map(category => {
-                const categoryFound = categories?.find(
-                  i => i.name === category.name
-                )
-                return (
-                  <Label
-                    sx={{ mb: '10px', display: 'flex', alignItems: 'center' }}
-                    key={`${category.name}-label`}
-                  >
-                    <Checkbox
-                      key={`${category.name}-checkbox`}
-                      id={category.name}
-                      name={category.name}
-                      ref={register}
-                      onClick={() => {
-                        categoryFound
-                          ? setCategories(
-                              // remove
-                              categories?.filter(i => i.name !== category.name)
-                            )
-                          : setCategories(
-                              categories?.length > 0
-                                ? [
-                                    // add
-                                    ...categories,
-                                    { name: category.name }
-                                  ]
-                                : [{ name: category.name }]
-                            )
-                      }}
-                      checked={categoryFound ? 1 : 0}
-                    />
-                    <Text sx={{ fontFamily: 'body' }}>{category.value}</Text>
-                  </Label>
-                )
-              })}
+            <Box sx={{ height: '320px', overflow: 'scroll' }}>
+              {categories &&
+                categoryList.map(category => {
+                  const categoryFound = categories?.find(
+                    i => i.name === category.name
+                  )
+                  return (
+                    <Label
+                      sx={{ mb: '10px', display: 'flex', alignItems: 'center' }}
+                      key={`${category.name}-label`}
+                    >
+                      <Checkbox
+                        key={`${category.name}-checkbox`}
+                        id={category.name}
+                        name={category.name}
+                        ref={register}
+                        onClick={() => {
+                          categoryFound
+                            ? setCategories(
+                                // remove
+                                categories?.filter(
+                                  i => i.name !== category.name
+                                )
+                              )
+                            : setCategories(
+                                categories?.length > 0
+                                  ? [
+                                      // add
+                                      ...categories,
+                                      { name: category.name }
+                                    ]
+                                  : [{ name: category.name }]
+                              )
+                        }}
+                        checked={categoryFound ? 1 : 0}
+                      />
+                      <Text sx={{ fontFamily: 'body' }}>{category.value}</Text>
+                    </Label>
+                  )
+                })}
             </Box>
-            {/* <CustomLabel title='Impact' htmlFor='editImpactLocation' /> */}
+            <CustomLabel title='Impact Location' htmlFor='editImpactLocation' />
+            {mapLocation || project?.impactLocation ? (
+              <Text sx={{ fontFamily: 'body', color: 'muted', fontSize: 8 }}>
+                {mapLocation || project?.impactLocation}
+              </Text>
+            ) : null}
+            <div id='locationField'>
+              <Input
+                id='autocomplete'
+                placeholder='Search a Location'
+                type='text'
+                sx={{ fontFamily: 'body', width: '400px', mr: '35px', mt: 4 }}
+                onChange={e => setMapLocation(e.target.value)}
+              />
+            </div>
+            <Label
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                flexDirection: 'row',
+                mt: 4
+              }}
+            >
+              <Checkbox
+                defaultChecked={
+                  mapLocation === 'Global' ||
+                  project?.impactLocation === 'Global'
+                }
+                onChange={() => {
+                  mapLocation === 'Global'
+                    ? setMapLocation('')
+                    : setMapLocation('Global')
+                }}
+              />
+              <Text sx={{ fontFamily: 'body', fontSize: 2 }}>
+                This project has a global impact
+              </Text>
+            </Label>
+            <div
+              css={{
+                display: 'flex',
+                flexDirection: 'column',
+                width: '600px',
+                backgroundColor: 'white',
+                borderRadius: '2px',
+                margin: '2rem 0 0 0'
+              }}
+            >
+              <div id='map' style={{ height: '250px' }} />
+            </div>
             {/* <CustomLabel title='Bank Account' htmlFor='addBankAccount' />
             <Text
               onClick={connectBankAccount}
@@ -274,12 +296,12 @@ function ProjectEdition(props) {
             <CustomInput
               name='editWalletAddress'
               ref={register}
-              defaultValue={walletAddress}
+              defaultValue={project?.walletAddress}
             />
             <CustomLabel
               variant='text.caption'
               style={{ margin: '5px 0 0 5px', color: theme.colors.bodyLight }}
-              title='Receiving Ethereum supported wallet address.'
+              title='Receiving Ethereum supported wallet address or ENS domain.'
               htmlFor={null}
             />
           </Flex>
@@ -324,12 +346,164 @@ function ProjectEdition(props) {
           </Button>
         </>
       </form>
+    </>
+  )
+}
+
+function ProjectEdition(props) {
+  const [loading, setLoading] = useState(false)
+  const client = useApolloClient()
+  const [showModal, setShowModal] = useState(false)
+  const [project, setProject] = useState(false)
+  const [updateProjectOnServer, setUpdateProjectOnServer] = useState(false)
+  const [showCancelModal, setCancelModal] = useState(false)
+  const [mapLocation, setMapLocation] = useState(null)
+
+  const { wallet } = useWallet()
+
+  const { data: fetchedProject, loadingProject } = useQuery(
+    FETCH_PROJECT_BY_SLUG,
+    {
+      variables: { slug: props?.project }
+    }
+  )
+  useEffect(() => {
+    web3 = wallet.web3
+  }, [])
+
+  useEffect(
+    data => {
+      if (fetchedProject) {
+        if (fetchedProject.projectBySlug) {
+          setProject(fetchedProject.projectBySlug)
+        }
+      }
+    },
+    [fetchedProject]
+  )
+
+  useEffect(() => {
+    window?.google && window.initMap(setMapLocation)
+  })
+
+  useEffect(() => {
+    if (project && updateProjectOnServer) {
+      const projectId = fetchedProject?.projectBySlug?.id
+      const editProjectMutation = async () => {
+        setLoading(true)
+        try {
+          const edit = await client.mutate({
+            mutation: EDIT_PROJECT,
+            variables: {
+              newProjectData: project,
+              projectId: parseFloat(projectId)
+            }
+          })
+          setUpdateProjectOnServer(false)
+          setShowModal(true)
+        } catch (error) {
+          setLoading(false)
+          Toast({
+            content: error?.message || JSON.stringify(error),
+            type: 'error'
+          })
+          console.log({ error })
+        }
+      }
+      editProjectMutation()
+    } else {
+      setLoading(false)
+    }
+  }, [project])
+
+  async function updateProject(data) {
+    try {
+      // Validate eth address
+      let ethAddress = data.editWalletAddress
+      if (project?.walletAddress !== data.editWalletAddress) {
+        // CHECK IF STRING IS ENS AND VALID
+        console.log({ wallet })
+        const ens = await wallet?.web3.eth.ens.getOwner(ethAddress)
+        if (ens !== '0x0000000000000000000000000000000000000000') {
+          ethAddress = ens
+        }
+        if (ethAddress.length !== 42 || !Web3.utils.isAddress(ethAddress)) {
+          return Toast({ content: 'Eth address not valid', type: 'error' })
+        }
+        // CHECK IF WALLET IS ALREADY TAKEN FOR A PROJECT
+        const res = await client.query({
+          query: GET_PROJECT_BY_ADDRESS,
+          variables: {
+            address: ethAddress
+          }
+        })
+        console.log({ res })
+        if (res?.data?.projectByAddress) {
+          return Toast({
+            content: 'this eth address is already being used for a project',
+            type: 'error'
+          })
+        }
+      }
+
+      const projectCategories = []
+      for (const category in categoryList) {
+        const name = categoryList[category]?.name
+        if (data[name]) {
+          projectCategories.push(categoryList[category].name)
+        }
+      }
+
+      const projectData = {
+        title: data.editTitle,
+        description: data.editDescription,
+        admin: project.admin,
+        impactLocation: mapLocation || project?.impactLocation,
+        categories: projectCategories,
+        walletAddress: Web3.utils.toChecksumAddress(ethAddress)
+      }
+
+      // Validate Image
+      console.log({ data })
+      if (data?.editImage && project?.image !== data?.editImage) {
+        if (data?.editImage.length === 1) {
+          projectData.imageStatic = data.editImage
+        } else {
+          //download image to send
+          const imageFile = await getImageFile(data.editImage, data?.editTitle)
+          projectData.imageUpload = imageFile
+        }
+      }
+      setUpdateProjectOnServer(true)
+      setProject(projectData)
+    } catch (error) {
+      setLoading(false)
+      console.log({ error })
+    }
+  }
+
+  return (
+    <>
+      <LoadingModal isOpen={loadingProject || loading} />
+      <ProjectEditionForm
+        {...props}
+        setShowModal={setShowModal}
+        setCancelModal={setCancelModal}
+        project={project}
+        updateProject={updateProject}
+        client={client}
+        mapLocation={mapLocation}
+        setMapLocation={setMapLocation}
+      />
       <ConfirmationModal
         showModal={showModal}
         setShowModal={setShowModal}
         title='Saved!'
         confirmation={{
-          do: () => window.location.replace(`/project/${project?.slug}`),
+          do: () =>
+            window.location.replace(
+              `/project/${fetchedProject?.projectBySlug?.slug}`
+            ),
           title: 'View Project'
         }}
         secondary={{
@@ -342,7 +516,7 @@ function ProjectEdition(props) {
         setShowModal={setCancelModal}
         title='Close without saving?'
         confirmation={{
-          do: () => goBack(),
+          do: () => props?.goBack(),
           title: 'Yes'
         }}
         secondary={{

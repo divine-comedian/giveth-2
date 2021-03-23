@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
 import * as queryString from 'query-string'
-import { navigate } from 'gatsby'
+import { graphql, navigate, Link } from 'gatsby'
 import Web3 from 'web3'
 import Seo from '../components/seo'
 import CreateProjectForm from '../components/create-project-form'
-import { useMutation } from '@apollo/react-hooks'
-import { Text, Spinner } from 'theme-ui'
+import { useMutation } from '@apollo/client'
+import { Flex, Text, Spinner, Image } from 'theme-ui'
 import { FETCH_PROJECTS, ADD_PROJECT } from '../apollo/gql/projects'
 import Layout from '../components/layout'
 import decoratorClouds from '../images/decorator-clouds.svg'
@@ -14,19 +14,25 @@ import decoratorFizzySquare from '../images/decorator-fizzy-square.svg'
 import peopleStretching from '../images/people-stretching.png'
 import HighFive from '../components/create-project-form/highFive'
 import fetch from 'isomorphic-fetch'
-import { TorusContext } from '../contextProvider/torusProvider'
-
+import { useWallet } from '../contextProvider/WalletProvider'
+import GithubIssue from '../components/GithubIssue'
+import Logger from '../Logger'
+import { logout } from '../services/auth'
 // import { ProjectBankAccountInput } from '../components/create-project-form/inputs'
 
 const IndexPage = props => {
+  const { data, location } = props
+  console.log({ props })
   // const [isLoggedIn] = useState(checkIfLoggedIn())
   // const [isLoggedIn] = useState(true)
   const [projectAdded, setProjectAdded] = useState(false)
   const [addedProject, setAddedProject] = useState(null)
+  const [inError, setInError] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
   const [addProjectQuery] = useMutation(ADD_PROJECT)
   // const [askedBankAccount, setAskedBankAccount] = useState(false)
 
-  const { projectId } = queryString.parse(props.location.search)
+  const { projectId } = queryString.parse(location.search)
   const onSubmit = async (values, walletAddress) => {
     setProjectAdded(true)
 
@@ -85,17 +91,39 @@ const IndexPage = props => {
       })
 
       if (project) {
-        console.log(`project : ${JSON.stringify(project, null, 2)}`)
         setAddedProject(project.data.addProject)
         setProjectAdded(true)
+        window?.localStorage.removeItem('create-form')
       }
     } catch (error) {
-      console.log(`Error adding project: ---> : ${error}`)
-      console.log(`${JSON.stringify(projectData, null, 2)}`)
+      if (error.message === 'Access denied') {
+        Logger.captureException(error)
+        logout(
+          setErrorMessage(
+            <>
+              <Text sx={{ variant: 'headings.h3', color: 'secondary', mb: 3 }}>
+                {`We're so sorry but ${error.message}`}
+              </Text>
+              <Text sx={{ variant: 'text.default' }}>
+                We have logged you out to resolve this.
+              </Text>
+              <Text sx={{ variant: 'text.default' }}>
+                <Link to='/'>Please login and start again</Link>
+              </Text>
+            </>
+          )
+        )
+      } else {
+        setErrorMessage(error.message)
+      }
+      setInError(true)
     }
   }
 
-  function AfterCreation () {
+  function newProject() {
+    setAddedProject(null)
+  }
+  function AfterCreation() {
     // TODO: Get project id after creation
     // if (!projectAdded && !projectId) {
     //   return <h3>loading</h3>
@@ -145,26 +173,26 @@ const IndexPage = props => {
           }}
           className='hide'
         />
-        <img
+        <Image
           src={peopleStretching}
           alt=''
-          css={{
+          sx={{
             position: 'absolute',
             top: '240px',
-            right: '130px',
-            width: '252px',
+            right: [0, 0, '50px'],
+            width: [0, '252px', '252px'],
             height: '610px',
             zIndex: '-1'
           }}
           className='hide'
         />
-        <img
+        <Image
           src={decoratorFizzySquare}
           alt=''
-          css={{
+          sx={{
             position: 'absolute',
             top: '260px',
-            left: '380px',
+            left: ['80px', '180px', '180px'],
             zIndex: '-1'
           }}
           className='hide'
@@ -177,15 +205,48 @@ const IndexPage = props => {
             projectImage={addedProject.image}
             projectTitle={addedProject.title}
             projectDescription={addedProject.description}
+            newProject={newProject}
           />
+        ) : !inError ? (
+          <Flex
+            sx={{
+              mt: '22%',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Text sx={{ variant: 'headings.h3', color: 'secondary', mb: 3 }}>
+              Setting everything up...
+            </Text>
+            <Spinner variant='spinner.large' />
+          </Flex>
         ) : (
-          <Spinner variant='spinner.medium' />
+          <Flex
+            sx={{
+              mt: '22%',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Text sx={{ variant: 'headings.h3', color: 'secondary', mb: 3 }}>
+              Something went wrong while adding your project
+            </Text>
+
+            {errorMessage}
+
+            <Text sx={{ variant: 'headings.h4', color: 'secondary', mb: 3 }}>
+              Please report this issue
+            </Text>
+            <GithubIssue />
+          </Flex>
         )}
       </>
     )
   }
 
-  function ProjectForm () {
+  function ProjectForm() {
     if (!projectAdded && !projectId) {
       return (
         <>
@@ -209,7 +270,10 @@ const IndexPage = props => {
             }}
             className='hide'
           />
-          <CreateProjectForm onSubmit={onSubmit} />
+          <CreateProjectForm
+            onSubmit={onSubmit}
+            categoryList={data.giveth.categories}
+          />
         </>
       )
     } else {
@@ -236,5 +300,14 @@ const IndexPage = props => {
     </Layout>
   )
 }
-
+export const pageQuery = graphql`
+  query {
+    giveth {
+      categories {
+        name
+        value
+      }
+    }
+  }
+`
 export default IndexPage

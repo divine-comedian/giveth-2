@@ -2,6 +2,7 @@
 import { jsx, Flex, Grid, Text, Box, Button } from 'theme-ui'
 import theme from '../gatsby-plugin-theme-ui/index'
 import React from 'react'
+import Seo from '../components/seo'
 import { Link, graphql } from 'gatsby'
 import { documentToReactComponents } from '@contentful/rich-text-react-renderer'
 import { BLOCKS } from '@contentful/rich-text-types'
@@ -107,6 +108,7 @@ const Partnerships = ({ data }) => {
 
   return (
     <Layout>
+      <Seo title='Our partnerships' />
       {!isMobile ? (
         <Decorator>
           <img
@@ -154,7 +156,7 @@ const Partnerships = ({ data }) => {
         >
           {data.contentFriends.edges.map(edges => (
             <ContentItem key={edges.node.id}>
-              <Link
+              <a
                 to={edges.node.link}
                 sx={{
                   textDecoration: 'none',
@@ -174,7 +176,7 @@ const Partnerships = ({ data }) => {
                 <Text pt={3} sx={{ variant: 'text.default' }}>
                   {edges.node.description}
                 </Text>
-              </Link>
+              </a>
             </ContentItem>
           ))}
         </Grid>

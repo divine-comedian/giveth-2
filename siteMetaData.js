@@ -3,8 +3,8 @@ let siteMetaData
 
 if (siteId === 'giveth') {
   siteMetaData = {
-    title: 'Giveth Simple Donation Application',
-    description: 'The future of giving',
+    title: 'Giveth Donation Application',
+    description: 'Building the Future of Giving #Blockchain4Good',
     author: '@giveth'
   }
 } else if (siteId === 'co2ken') {

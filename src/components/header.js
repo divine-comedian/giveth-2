@@ -10,8 +10,8 @@ import theme from '../gatsby-plugin-theme-ui/index'
 import Logo from './content/Logo'
 import { useLocation } from '@reach/router'
 import Headroom from 'react-headroom'
-import { usePopup } from '../contextProvider/popupProvider'
-import { TorusContext } from '../contextProvider/torusProvider'
+import { PopupContext } from '../contextProvider/popupProvider'
+import { useWallet } from '../contextProvider/WalletProvider'
 
 // import graphics
 import iconVerticalLine from '../images/icon-vertical-line.svg'
@@ -129,7 +129,10 @@ const NavLink = styled(Link)`
   line-height: 21px;
   text-decoration: none;
   :hover {
-    color: ${theme.colors.accent};
+    color: ${theme.colors.hover};
+  }
+  :active {
+    color: ${theme.colors.secondary};
   }
 `
 
@@ -144,7 +147,10 @@ const CreateLink = styled.div`
   color: ${theme.colors.primary};
   align-self: center;
   :hover {
-    color: ${theme.colors.accent};
+    color: ${theme.colors.hover};
+  }
+  :active {
+    color: ${theme.colors.secondary};
   }
 `
 
@@ -158,8 +164,9 @@ const projectSearch = process.env.PROJECT_SEARCH
 
 const Header = ({ siteTitle, isHomePage }) => {
   const location = useLocation()
-  const { isLoggedIn } = React.useContext(TorusContext)
-  const { triggerPopup } = usePopup()
+  const { isLoggedIn, user } = useWallet()
+  const usePopup = React.useContext(PopupContext)
+  const { triggerPopup } = usePopup
   const isMobile = useMediaQuery({ query: '(max-width: 825px)' })
   const [hasScrolled, setScrollState] = useState(false)
   const [navHidden, setHideNavbar] = useState(false)
@@ -182,7 +189,10 @@ const Header = ({ siteTitle, isHomePage }) => {
   }, [])
 
   const goCreate = async () => {
-    if (!isLoggedIn) return triggerPopup('Welcome')
+    if (!isLoggedIn) return triggerPopup('WelcomeLoggedOut')
+    if (!user?.name || !user?.email || user.email === '') {
+      return triggerPopup('IncompleteProfile')
+    }
     navigate('/create')
   }
 
@@ -232,6 +242,7 @@ const Header = ({ siteTitle, isHomePage }) => {
                 alt=''
                 width='40px'
                 height='40px'
+                sx={{ mr: 3 }}
               />
             ) : (
               <LogoSpan
@@ -266,14 +277,17 @@ const Header = ({ siteTitle, isHomePage }) => {
           <MiddleSpan>
             <NavLink
               to='/'
-              sx={{ color: isHomePage ? 'secondary' : 'primary' }}
+              sx={{
+                display: ['none', 'block', 'block'],
+                color: isHomePage ? 'primary' : 'secondary'
+              }}
             >
               Home
             </NavLink>
             {/* <NavLink to='/causes'>Causes</NavLink> */}
             <NavLink
               to='/projects'
-              sx={{ color: pathname === 'projects' ? 'secondary' : 'primary' }}
+              sx={{ color: pathname === 'projects' ? 'primary' : 'secondary' }}
             >
               Projects
             </NavLink>
@@ -284,6 +298,12 @@ const Header = ({ siteTitle, isHomePage }) => {
               <Flex>
                 {pathname !== 'projects' && (
                   <CreateLink onClick={goCreate}>Create a project</CreateLink>
+                  // <NavLink
+                  //   to='/create'
+                  //   sx={{ color: 'secondary', textTransform: 'upperCase' }}
+                  // >
+                  //   Create a project
+                  // </NavLink>
                 )}
                 {projectSearch === 'true' && (
                   <IconButton>

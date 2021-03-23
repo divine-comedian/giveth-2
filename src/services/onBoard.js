@@ -3,17 +3,23 @@ import Onboard from 'bnc-onboard'
 
 const networkId = process.env.GATSBY_NETWORK_ID
 const rpcUrl = process.env.GATSBY_ETHEREUM_NODE
-const dappId = process.env.BLOCK_NATIVE_DAPP_ID
-export function initOnboard(subscriptions) {
+const dappId = process.env.GATSBY_BLOCK_NATIVE_DAPP_ID
+const portisKey = process.env.GATSBY_PORTIS_KEY
+export function initOnboard(subscriptions, currentChainId) {
   return Onboard({
     dappId,
     hideBranding: false,
-    networkId: parseInt(networkId),
+    networkId: currentChainId || parseInt(networkId),
     // darkMode: true,
     subscriptions,
     walletSelect: {
       wallets: [
         { walletName: 'metamask' },
+        { walletName: 'torus' },
+        {
+          walletName: 'portis',
+          apiKey: portisKey
+        },
         {
           walletName: 'trezor',
           appUrl: 'https://giveth.io/',
@@ -33,13 +39,8 @@ export function initOnboard(subscriptions) {
         { walletName: 'coinbase' },
         { walletName: 'status' },
         // { walletName: 'walletLink', rpcUrl },
-        // {
-        //   walletName: 'portis',
-        //   apiKey: 'b2b7586f-2b1e-4c30-a7fb-c2d1533b153b'
-        // },
         // { walletName: 'fortmatic', apiKey: 'pk_test_886ADCAB855632AA' },
         { walletName: 'unilogin' },
-        { walletName: 'torus' },
         // { walletName: 'squarelink', apiKey: '87288b677f8cfb09a986' },
         { walletName: 'authereum', disableNotifications: true },
         // { walletName: 'trust', rpcUrl },

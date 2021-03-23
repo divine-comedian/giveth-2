@@ -1,68 +1,44 @@
 /** @jsx jsx */
-import { jsx, Flex, Spinner } from 'theme-ui'
+import React from 'react'
+import { Flex, Text, jsx } from 'theme-ui'
+import Seo from '../components/seo'
 import Layout from '../components/layout'
-import { Router } from '@reach/router'
-import { useApolloClient } from '@apollo/react-hooks'
 import { ProjectDonatorView } from '../components/project'
-import { FETCH_PROJECT_BY_SLUG } from '../apollo/gql/projects'
-import { useEffect, useState } from 'react'
+import { useWallet } from '../contextProvider/WalletProvider'
 
-const Project = props => {
-  console.log({ props })
-  const { id } = props
-  const client = useApolloClient()
+const ShowComponents = ({ pageContext }) => {
+  const { user } = useWallet()
+  const statusId = pageContext?.project?.status?.id
+  const isAdmin = statusId === user?.id
+  return (
+    <>
+      {/* {statusId && statusId !== '5' && !isAdmin ? (
+        <Flex sx={{ justifyContent: 'center', pt: 5 }}>
+          <Text variant='headings.h4' sx={{ color: 'secondary' }}>
+            Project Not Available
+          </Text>
+        </Flex>
+      ) : ( */}
+      <ProjectDonatorView pageContext={{ project: pageContext?.project }} />
+      {/* )} */}
+    </>
+  )
+}
 
-  const [loading, setLoading] = useState(true)
-  const [slugProject, setSlugProject] = useState(null)
-
-  useEffect(() => {
-    const getProject = async () => {
-      const slug = id
-      try {
-        const { data } = await client.query({
-          query: FETCH_PROJECT_BY_SLUG,
-          variables: {
-            slug: slug.toString()
-          }
-        })
-        setSlugProject(data?.projectBySlug)
-        setLoading(false)
-      } catch (error) {
-        console.log({ error })
-        setLoading(false)
-      }
-    }
-    if (id) {
-      getProject()
-    } else {
-      setLoading(false)
-    }
-  })
-
+const Project = ({ pageContext }) => {
   return (
     <Layout>
-      {loading ? (
-        <Flex sx={{ justifyContent: 'center', pt: 5 }}>
-          <Spinner variant='spinner.medium' />
-        </Flex>
-      ) : slugProject ? (
-        <ProjectDonatorView pageContext={{ project: slugProject }} />
-      ) : null}
+      <Seo
+        title={
+          pageContext?.project?.title
+            ? `Check out ${pageContext?.project?.title}`
+            : 'Check out this project!'
+        }
+        image={pageContext?.project?.image}
+      />
+      <ShowComponents pageContext={pageContext} />
     </Layout>
   )
 }
 
-const ProjectWithoutSlug = () => {
-  return <Layout />
-}
-
-const ProjectIndex = () => {
-  return (
-    <Router basepath='/'>
-      <ProjectWithoutSlug path='project' />
-      <Project path='project/:id' />
-    </Router>
-  )
-}
-
-export default ProjectIndex
+export default Project

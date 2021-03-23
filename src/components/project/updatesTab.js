@@ -3,7 +3,7 @@ import {
   GET_PROJECT_UPDATES,
   ADD_PROJECT_UPDATE
 } from '../../apollo/gql/projects'
-import { useMutation, useQuery } from '@apollo/react-hooks'
+import { useMutation, useQuery } from '@apollo/client'
 import { ProjectContext } from '../../contextProvider/projectProvider'
 import Toast from '../toast'
 import Timeline from './timeline'
@@ -14,12 +14,13 @@ const UpdatesTab = ({ showModal, setShowModal, project, isOwner }) => {
     ProjectContext
   )
 
-  const { data } = useQuery(GET_PROJECT_UPDATES, {
+  const { data, error } = useQuery(GET_PROJECT_UPDATES, {
     variables: {
-      projectId: parseInt(project?.id),
+      projectId: parseFloat(project?.id),
       take: 100,
       skip: 0
-    }
+    },
+    fetchPolicy: 'network-only'
   })
 
   useEffect(() => {
@@ -44,12 +45,17 @@ const UpdatesTab = ({ showModal, setShowModal, project, isOwner }) => {
         refetchQueries: [
           {
             query: GET_PROJECT_UPDATES,
-            variables: { projectId: parseInt(project?.id), take: 100, skip: 0 }
+            variables: {
+              projectId: parseFloat(project?.id),
+              take: 100,
+              skip: 0
+            }
           }
-        ],
-        awaitRefetchQueries: true
+        ]
       })
+      console.log({ data })
     } catch (error) {
+      console.error('addUpdate')
       console.log({ error })
       alert(JSON.stringify(error?.message))
     }
@@ -62,6 +68,7 @@ const UpdatesTab = ({ showModal, setShowModal, project, isOwner }) => {
         addUpdate={addUpdate}
         project={project}
         isOwner={isOwner}
+        refreshQuery={GET_PROJECT_UPDATES}
       />
     </>
   )

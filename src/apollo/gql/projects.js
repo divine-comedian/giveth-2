@@ -1,5 +1,37 @@
 import gql from 'graphql-tag'
 
+const FETCH_ALL_PROJECTS = gql`
+  query FetchAllProjects($limit: Int, $skip: Int, $orderBy: OrderBy) {
+    projects(take: $limit, skip: $skip, orderBy: $orderBy) {
+      id
+      title
+      balance
+      image
+      slug
+      creationDate
+      admin
+      description
+      walletAddress
+      impactLocation
+      status {
+        id
+        symbol
+        name
+        description
+      }
+      categories {
+        name
+      }
+      reactions {
+        reaction
+        id
+        projectUpdateId
+        userId
+      }
+    }
+  }
+`
+
 const FETCH_PROJECTS = gql`
   query FetchProjects($limit: Int, $skip: Int, $orderBy: OrderBy) {
     topProjects(take: $limit, skip: $skip, orderBy: $orderBy) {
@@ -16,6 +48,12 @@ const FETCH_PROJECTS = gql`
         impactLocation
         categories {
           name
+        }
+        reactions {
+          reaction
+          id
+          projectUpdateId
+          userId
         }
       }
       totalCount
@@ -48,6 +86,32 @@ const FETCH_USER_PROJECTS = gql`
   }
 `
 
+const FETCH_MY_PROJECTS = gql`
+  query FetchMyProjects {
+    myProjects {
+      id
+      title
+      balance
+      description
+      image
+      slug
+      creationDate
+      admin
+      walletAddress
+      impactLocation
+      categories {
+        name
+      }
+      status {
+        id
+        symbol
+        name
+        description
+      }
+    }
+  }
+`
+
 const FETCH_PROJECT = gql`
   query Project($id: ID!) {
     project(id: $id) {
@@ -60,6 +124,12 @@ const FETCH_PROJECT = gql`
       creationDate
       walletAddress
       impactLocation
+      status {
+        id
+        symbol
+        name
+        description
+      }
       categories {
         name
       }
@@ -81,6 +151,38 @@ const FETCH_PROJECT_BY_SLUG = gql`
       impactLocation
       categories {
         name
+      }
+      status {
+        id
+        symbol
+        name
+        description
+      }
+      reactions {
+        reaction
+        userId
+      }
+      donations {
+        transactionId
+        transactionNetworkId
+        toWalletAddress
+        fromWalletAddress
+        anonymous
+        amount
+        valueUsd
+        user {
+          id
+          name
+          firstName
+          lastName
+          avatar
+          walletAddress
+        }
+        project {
+          title
+        }
+        createdAt
+        currency
       }
     }
   }
@@ -252,6 +354,26 @@ const TOGGLE_UPDATE_REACTION = gql`
   }
 `
 
+const TOGGLE_PROJECT_REACTION = gql`
+  mutation ToggleProjectReaction($reaction: String!, $projectId: Float!) {
+    toggleProjectReaction(reaction: $reaction, projectId: $projectId) {
+      reaction
+      reactionCount
+    }
+  }
+`
+
+const GET_PROJECT_REACTIONS = gql`
+  query GetProjectReactions($projectId: Float!) {
+    getProjectReactions(projectId: $projectId) {
+      id
+      projectUpdateId
+      userId
+      reaction
+    }
+  }
+`
+
 const GET_PROJECT_BY_ADDRESS = gql`
   query ProjectByAddress($address: String!) {
     projectByAddress(address: $address) {
@@ -278,8 +400,8 @@ const REGISTER_PROJECT_DONATION = gql`
 `
 
 const EDIT_PROJECT = gql`
-  mutation editProject($newProjectData: ProjectInput!, $projectId: Float!) {
-    editProject(newProjectData: $newProjectData, projectId: $projectId) {
+  mutation editProject($projectId: Float!, $newProjectData: ProjectInput!) {
+    editProject(projectId: $projectId, newProjectData: $newProjectData) {
       id
       title
       description
@@ -296,8 +418,20 @@ const EDIT_PROJECT = gql`
   }
 `
 
+const DEACTIVATE_PROJECT = gql`
+  mutation deactivateProject($projectId: Float!) {
+    deactivateProject(projectId: $projectId)
+  }
+`
+
+const ACTIVATE_PROJECT = gql`
+  mutation activateProject($projectId: Float!) {
+    activateProject(projectId: $projectId)
+  }
+`
 export {
   FETCH_PROJECTS,
+  FETCH_ALL_PROJECTS,
   FETCH_USER_PROJECTS,
   FETCH_PROJECT,
   FETCH_PROJECT_BY_SLUG,
@@ -309,8 +443,13 @@ export {
   GET_STRIPE_PROJECT_DONATIONS,
   ADD_PROJECT_UPDATE,
   GET_PROJECT_UPDATES,
+  TOGGLE_PROJECT_REACTION,
   TOGGLE_UPDATE_REACTION,
+  GET_PROJECT_REACTIONS,
   GET_PROJECT_BY_ADDRESS,
   REGISTER_PROJECT_DONATION,
-  EDIT_PROJECT
+  EDIT_PROJECT,
+  ACTIVATE_PROJECT,
+  DEACTIVATE_PROJECT,
+  FETCH_MY_PROJECTS
 }

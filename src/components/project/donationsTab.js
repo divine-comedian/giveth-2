@@ -1,10 +1,8 @@
 import React from 'react'
 import styled from '@emotion/styled'
-import { ethers } from 'ethers'
-import { ProjectContext } from '../../contextProvider/projectProvider'
-import { Spinner, Text } from 'theme-ui'
+import { Spinner, Flex, Text } from 'theme-ui'
 import theme from '../../gatsby-plugin-theme-ui'
-import Table from './donationsTable'
+import DonationsTable from './donationsTable'
 
 const Funds = styled.div`
   padding: 2rem;
@@ -14,11 +12,18 @@ const Funds = styled.div`
   border-radius: 12px;
 `
 
-const DonationsTab = ({ project, showModal, setShowModal }) => {
+const DonationsTab = ({ project, donations: projectDonations }) => {
   const [loading, setLoading] = React.useState(true)
-  const { currentProjectView } = React.useContext(ProjectContext)
-  const total = currentProjectView?.ethBalance
-
+  const donations = projectDonations?.filter(el => el != null)
+  const totalDonations = donations
+    ? donations?.reduce((total, donation) => total + donation?.amount || 0, 0)
+    : 0
+  const totalUSDonations = donations
+    ? donations?.reduce((total, donation) => total + donation?.valueUsd || 0, 0)
+    : 0
+  const totalETHDonations = donations
+    ? donations?.reduce((total, donation) => total + donation?.valueEth || 0, 0)
+    : 0
   React.useEffect(() => {
     setLoading(false)
   }, [])
@@ -27,7 +32,7 @@ const DonationsTab = ({ project, showModal, setShowModal }) => {
     return <Spinner variant='spinner.medium' />
   }
 
-  if (!total)
+  if (donations?.length === 0)
     return (
       <Text sx={{ variant: 'text.large', color: 'secondary' }}>
         No donations yet :(
@@ -37,25 +42,71 @@ const DonationsTab = ({ project, showModal, setShowModal }) => {
   return (
     <div>
       <Funds>
-        <Text sx={{ variant: 'text.medium', color: 'secondary' }}>
-          TOTAL FUNDS RAISED:
-        </Text>
-        <Text
-          sx={{
-            variant: ['headings.h3', null, 'headings.display'],
-            color: 'secondary'
-          }}
-        >
-          {`${parseFloat(
-            ethers.utils.formatEther(currentProjectView?.ethBalance)
-          ).toFixed(4)} ETH` ||
-            (total?.amount / 10)?.toLocaleString('en-US', {
-              style: 'currency',
-              currency: 'USD'
-            })}
-        </Text>
+        {totalUSDonations && totalDonations > 0 ? (
+          <Flex
+            sx={{
+              flexDirection: 'column'
+            }}
+          >
+            <Text sx={{ variant: 'text.medium', color: 'secondary' }}>
+              TOTAL FUNDS RAISED:
+            </Text>
+            <Flex
+              sx={{
+                flexDirection: 'row',
+                alignItems: 'flex-end'
+              }}
+            >
+              <Text
+                sx={{
+                  pr: 4,
+                  variant: ['headings.h3', null, 'headings.display'],
+                  color: 'secondary'
+                }}
+              >
+                {totalUSDonations?.toLocaleString('en-US', {
+                  style: 'currency',
+                  currency: 'USD'
+                })}
+              </Text>
+              <Text
+                sx={{
+                  variant: ['headings.h6', null, 'headings.h5'],
+                  pb: 3,
+                  color: 'secondary'
+                }}
+              >
+                {totalETHDonations
+                  ? `${parseFloat(totalETHDonations).toFixed(4)} ETH`
+                  : null}
+              </Text>
+            </Flex>
+          </Flex>
+        ) : null}
+        <Flex sx={{ flexDirection: 'column' }}>
+          <Text sx={{ variant: 'text.medium', color: 'bodyLight', mb: 2 }}>
+            Project Address
+          </Text>
+
+          <Text
+            sx={{
+              variant: 'text.medium',
+              color: 'bodyLight',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              mt: -2
+            }}
+            onClick={() =>
+              window.open(
+                `https://etherscan.io/address/${project?.walletAddress}`
+              )
+            }
+          >
+            {project?.walletAddress}
+          </Text>
+        </Flex>
       </Funds>
-      <Table donations={currentProjectView?.donations} />
+      <DonationsTable donations={donations} />
     </div>
   )
 }

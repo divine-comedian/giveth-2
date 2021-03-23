@@ -1,11 +1,17 @@
 /** @jsx jsx */
 import React, { useState, useEffect } from 'react'
-import { TorusContext } from '../../contextProvider/torusProvider'
-import { Avatar, Button, Box, Flex, Text, jsx } from 'theme-ui'
+import { useWallet } from '../../contextProvider/WalletProvider'
+import { Button, Box, Flex, Text, jsx } from 'theme-ui'
+import Notification from '../notification'
+import Avatar from '../avatar'
+import EditProfileModal from './editProfileModal'
 
 const MyAccount = ({ info }) => {
+  const [openModal, setOpenModal] = useState(false)
   const [ethPrice, setEthPrice] = useState(1)
-  const { balance, user } = React.useContext(TorusContext)
+  const wallet = useWallet()
+  const user = wallet?.user
+  const balance = wallet?.balance
 
   useEffect(() => {
     const init = async () => {
@@ -19,11 +25,39 @@ const MyAccount = ({ info }) => {
   })
   return (
     <>
+      <EditProfileModal
+        isOpen={openModal}
+        onRequestClose={() => setOpenModal(false)}
+        user={user}
+      />
+      {!user?.name && (
+        <Notification
+          content='Please finish setting up your public profile.'
+          action={{ title: 'Complete Profile', do: () => setOpenModal(true) }}
+          type='warn'
+        />
+      )}
+
       <Flex>
-        <Avatar src={user?.profileImage} sx={{ width: 100, height: 100 }} />
-        <Box sx={{ ml: '27px' }}>
+        <Avatar
+          img={user?.profileImage || user?.avatar}
+          size={100}
+          address={user.getWalletAddress()}
+        />
+        <Box sx={{ ml: '27px', textAlign: 'flex-end' }}>
           <Text sx={{ color: 'secondary', fontSize: 7 }}>{user?.name}</Text>
           <Text sx={{ color: 'bodyDark', fontSize: 3 }}>{user?.email}</Text>
+          <Text
+            onClick={() => setOpenModal(true)}
+            sx={{
+              color: 'primary',
+              fontSize: 3,
+              variant: 'links.default',
+              mt: 2
+            }}
+          >
+            Edit Public Profile
+          </Text>
         </Box>
       </Flex>
       <Flex sx={{ mt: '40px', alignItems: 'center' }}>
@@ -42,8 +76,8 @@ const MyAccount = ({ info }) => {
           Change
         </Button> */}
       </Flex>
-      <Text sx={{ mt: '14px', variant: 'text.medium' }}>
-        {user?.addresses?.length > 0 && user?.addresses[0]}
+      <Text sx={{ mt: '14px', variant: 'text.medium', color: 'secondary' }}>
+        {user.getWalletAddress()}
       </Text>
       <Flex sx={{ mt: '40px' }}>
         <Box
@@ -89,7 +123,9 @@ const MyAccount = ({ info }) => {
           >
             My projects
           </Text>
-          <Text sx={{ color: 'primary', fontSize: 7 }}>{info?.myProjects}</Text>
+          <Text sx={{ color: 'primary', fontSize: 7 }}>
+            {info?.myProjects || 0}
+          </Text>
         </Box>
       </Flex>
       <Box

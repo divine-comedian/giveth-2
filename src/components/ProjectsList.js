@@ -1,6 +1,6 @@
 /** @jsx jsx */
-import React from 'react'
 import { Box, Button, Grid, Flex, jsx, Text, Input } from 'theme-ui'
+import React from 'react'
 import ProjectCard from './projectCard'
 import NoImage from '../images/no-image-available.jpg'
 import SearchIcon from '../images/svg/general/search-icon.svg'
@@ -23,6 +23,7 @@ export const OrderByDirection = {
 }
 
 const CreateLink = styled(Link)`
+  text-align: right;
   text-decoration: none;
   font-family: 'Red Hat Display', sans-serif;
   text-transform: uppercase;
@@ -30,7 +31,7 @@ const CreateLink = styled(Link)`
   color: ${theme.colors.primary};
   align-self: center;
   :hover {
-    color: ${theme.colors.accent};
+    color: ${theme.colors.hover};
   }
 `
 const IconSearch = styled(SearchIcon)`
@@ -116,12 +117,14 @@ const ProjectsList = props => {
           >
             Projects{' '}
           </span>
-          <span
-            sx={{
-              variant: 'headings.h5',
-              color: 'bodyLight'
-            }}
-          >{`(${totalCount})`}</span>
+          {totalCount && (
+            <span
+              sx={{
+                variant: 'headings.h5',
+                color: 'bodyLight'
+              }}
+            >{`(${totalCount})`}</span>
+          )}
         </Text>
         <CreateLink to='/create'>Create a project</CreateLink>
       </Flex>
@@ -232,19 +235,26 @@ const ProjectsList = props => {
               }}
             >
               {projects
-                ? projects.map((project, index) => (
-                    <ProjectCard
-                      id={project.id}
-                      listingId={project.title + '-' + index}
-                      key={project.title + '-' + index}
-                      name={project.title}
-                      slug={project.slug}
-                      donateAddress={project.donateAddress}
-                      image={project.image || NoImage}
-                      raised={project.balance}
-                      project={project}
-                    />
-                  ))
+                ? projects
+                    ?.slice()
+                    .sort(
+                      (a, b) =>
+                        new Date(a.creationDate) - new Date(b.creationDate)
+                    )
+                    .map((project, index) => (
+                      <ProjectCard
+                        shadowed
+                        id={project.id}
+                        listingId={project.title + '-' + index}
+                        key={project.title + '-' + index}
+                        name={project.title}
+                        slug={project.slug}
+                        donateAddress={project.donateAddress}
+                        image={project.image || NoImage}
+                        raised={project.balance}
+                        project={project}
+                      />
+                    ))
                 : null}
             </Grid>
           </div>

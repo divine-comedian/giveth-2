@@ -1,7 +1,6 @@
 /** @jsx jsx */
-import React, { useContext, useState, useEffect } from 'react'
-import { Link } from 'gatsby'
-import { ProveWalletContext } from '../../contextProvider/proveWalletProvider'
+import React, { useContext, useState } from 'react'
+import { Link, navigate } from 'gatsby'
 import { useQueryParams, StringParam } from 'use-query-params'
 import ProjectCard from '../projectListing'
 import ProjectEdition from './projectEdition/index'
@@ -10,6 +9,7 @@ import theme from '../../gatsby-plugin-theme-ui'
 import { Box, Grid, Text, jsx } from 'theme-ui'
 import DarkClouds from '../../images/svg/general/decorators/dark-clouds.svg'
 import RaisedHand from '../../images/decorator-raised-one-hand.png'
+import { useWallet } from '../../contextProvider/WalletProvider'
 
 const SpecialCard = styled(Link)`
   display: flex;
@@ -40,15 +40,13 @@ const RaisedHandImg = styled.img`
 
 const MyProjects = props => {
   const { projects, edit } = props
+
   const [editProject, setEditProject] = useState(edit)
-  const { isWalletProved, proveWallet } = useContext(ProveWalletContext)
+  const { isLoggedIn, user } = useWallet()
   const [query, setQuery] = useQueryParams({
     view: StringParam,
     data: StringParam
   })
-  useEffect(() => {
-    window.scrollTo(0, 0)
-  }, [])
 
   const setProject = val => {
     setQuery({ view: 'projects', data: val.slug })
@@ -63,24 +61,8 @@ const MyProjects = props => {
     )
   }
 
-  if (!isWalletProved) {
-    return (
-      <>
-        <Text sx={{ variant: 'headings.h4', color: 'secondary', mt: 4 }}>
-          Let's first verify your wallet{' '}
-          <a
-            sx={{
-              color: 'primary',
-              textDecoration: 'underline',
-              cursor: 'pointer'
-            }}
-            onClick={proveWallet}
-          >
-            here
-          </a>
-        </Text>
-      </>
-    )
+  if (!isLoggedIn) {
+    navigate('/', { state: { welcome: true } })
   }
   return (
     <>
@@ -88,6 +70,7 @@ const MyProjects = props => {
         {projects?.map((item, index) => {
           return (
             <ProjectCard
+              withEditHover
               action={() => setProject(item)}
               name={item?.title}
               description={item?.description}
@@ -95,11 +78,15 @@ const MyProjects = props => {
               raised={111}
               categories={item?.categories}
               listingId={index}
+              slug={item?.slug}
               key={index}
             />
           )
         })}
-        <SpecialCard to='/create' sx={{ cursor: 'pointer' }}>
+        <SpecialCard
+          to='/create'
+          sx={{ cursor: 'pointer', textDecoration: 'none' }}
+        >
           {' '}
           <DarkClouds
             style={{ position: 'absolute', top: '41px', right: '34px' }}
@@ -110,7 +97,8 @@ const MyProjects = props => {
               pb: 2,
               pt: 4,
               textAlign: 'center',
-              alignSelf: 'center'
+              alignSelf: 'center',
+              textDecoration: 'none'
             }}
           >
             <Text
@@ -121,7 +109,12 @@ const MyProjects = props => {
             >
               Start raising funds
             </Text>
-            <Text sx={{ variant: 'headings.h4', color: 'background' }}>
+            <Text
+              sx={{
+                variant: 'headings.h4',
+                color: 'background'
+              }}
+            >
               Create a Project
             </Text>
           </Box>

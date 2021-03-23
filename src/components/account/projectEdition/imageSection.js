@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { Flex, Grid, Button, Image, Text } from 'theme-ui'
+import { Flex, Grid, Box, Image, Text } from 'theme-ui'
 import { useDropzone } from 'react-dropzone'
 import { toBase64 } from '../../../utils'
 import styled from '@emotion/styled'
+import theme from '../../../gatsby-plugin-theme-ui'
 
 import ProjectImageGallery1 from '../../../images/svg/create/projectImageGallery1.svg'
 import ProjectImageGallery2 from '../../../images/svg/create/projectImageGallery2.svg'
@@ -10,8 +11,7 @@ import ProjectImageGallery3 from '../../../images/svg/create/projectImageGallery
 import ProjectImageGallery4 from '../../../images/svg/create/projectImageGallery4.svg'
 import placeHolder from '../../../images/placeholder.png'
 
-const Selection = styled(Button)`
-  background: unset;
+const Selection = styled(Box)`
   cursor: pointer;
   width: 80px;
   height: 80px;
@@ -19,18 +19,27 @@ const Selection = styled(Button)`
   margin: 4% 2% 0 0;
   border: 2px solid #dfdae8;
   border-radius: 8px;
+  background-color: ${theme.colors.background};
 `
 
 function ImageSection({ image, register }) {
-  const [displayImage, setDisplayImage] = useState(image)
+  const [displayImage, setDisplayImage] = useState(null)
 
   const { getRootProps, getInputProps } = useDropzone({
     accept: 'image/*',
     multiple: false,
     onDrop: async acceptedFile => {
-      setDisplayImage(await toBase64(acceptedFile[0]))
+      try {
+        setDisplayImage(await toBase64(acceptedFile[0]))
+      } catch (error) {
+        console.log({ error })
+      }
     }
   })
+
+  useEffect(() => {
+    setDisplayImage(image)
+  }, [image])
 
   const ProjectImage = type => {
     return (
@@ -44,7 +53,6 @@ function ImageSection({ image, register }) {
       />
     )
   }
-
   return (
     <>
       <Grid
@@ -57,7 +65,10 @@ function ImageSection({ image, register }) {
           minHeight: '270px',
           maxHeight: '270px',
           mt: '12px',
-          p: '20% 0'
+          p: '20% 0',
+          '&:hover': {
+            cursor: 'pointer'
+          }
         }}
       >
         <Flex
@@ -83,7 +94,8 @@ function ImageSection({ image, register }) {
               src={placeHolder}
               sx={{ objectFit: 'cover', maxHeight: '150px' }}
             />
-          ) : displayImage.startsWith('data:') ? (
+          ) : displayImage?.startsWith('data:') ||
+            displayImage?.startsWith('http') ? (
             <Image
               src={displayImage}
               sx={{ objectFit: 'cover', maxHeight: '150px' }}
@@ -110,24 +122,30 @@ function ImageSection({ image, register }) {
               Upload from computer
             </Text>
           </Text>
-          <Text sx={{ marginTop: '8px' }}>
+          <Text
+            sx={{
+              marginTop: '8px'
+            }}
+          >
             Suggested image size min. 1200px width. Image size up to 16mb.
           </Text>
         </Flex>
       </Grid>
-      {[1, 2, 3, 4].map((i, index) => {
-        return (
-          <Selection
-            key={index}
-            type='button'
-            onClick={() => {
-              setDisplayImage(i?.toString())
-            }}
-          >
-            {ProjectImage(i)}
-          </Selection>
-        )
-      })}
+      <Flex sx={{ flexDirection: 'row' }}>
+        {[1, 2, 3, 4].map((i, index) => {
+          return (
+            <Selection
+              key={index}
+              type='button'
+              onClick={() => {
+                setDisplayImage(i?.toString())
+              }}
+            >
+              {ProjectImage(i)}
+            </Selection>
+          )
+        })}
+      </Flex>
     </>
   )
 }

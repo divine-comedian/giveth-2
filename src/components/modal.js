@@ -18,6 +18,7 @@ const customStyles = {
     left: '50%',
     right: 'auto',
     bottom: 'auto',
+    overflow: 'hidden',
     padding: 0,
     borderRadius: '12px',
     borderColor: 'transparent',
@@ -28,7 +29,6 @@ const customStyles = {
 }
 
 function CustomModal(props) {
-  console.log(props)
   return (
     <Modal
       isOpen={props.isOpen}

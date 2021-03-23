@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useContext } from 'react'
-import Web3 from 'web3'
 import PropTypes from 'prop-types'
 import {
   Box,
@@ -13,12 +12,12 @@ import {
 } from 'theme-ui'
 import { navigate } from 'gatsby'
 import { GET_PROJECT_BY_ADDRESS } from '../../apollo/gql/projects'
-import { useApolloClient } from '@apollo/react-hooks'
-import { ProveWalletContext } from '../../contextProvider/proveWalletProvider'
-import { TorusContext } from '../../contextProvider/torusProvider'
+import { useApolloClient } from '@apollo/client'
+import { projectWalletAlreadyUsed, getProjectWallet } from './utils'
+import { useWallet } from '../../contextProvider/WalletProvider'
+import { PopupContext } from '../../contextProvider/popupProvider'
 import { useForm } from 'react-hook-form'
 import { useTransition } from 'react-spring'
-import { Helmet } from 'react-helmet'
 
 import {
   ProjectNameInput,
@@ -32,21 +31,39 @@ import {
 import EditButtonSection from './EditButtonSection'
 import FinalVerificationStep from './FinalVerificationStep'
 import ConfirmationModal from '../confirmationModal'
-import { categoryList } from '../../utils/constants'
 import Toast from '../toast'
 
 const CreateProjectForm = props => {
   const [loading, setLoading] = useState(true)
-  const { isWalletProved, proveWallet } = useContext(ProveWalletContext)
-  const { user, isLoggedIn } = useContext(TorusContext)
-  const APIKEY = process.env.GATSBY_GOOGLE_MAPS_API_KEY
+  const [incompleteProfile, setIncompleteProfile] = useState(false)
+  const { isLoggedIn, user, validateToken, logout } = useWallet()
+  const [flashMessage, setFlashMessage] = useState('')
+
   const { register, handleSubmit } = useForm()
   const [formData, setFormData] = useState({})
   const [walletUsed, setWalletUsed] = useState(false)
+  const usePopup = React.useContext(PopupContext)
   const client = useApolloClient()
 
   const [currentStep, setCurrentStep] = useState(0)
   const nextStep = () => setCurrentStep(currentStep + 1)
+  const goBack = () => setCurrentStep(currentStep - 1)
+
+  useEffect(() => {
+    doValidateToken()
+    async function doValidateToken() {
+      const isValid = await validateToken()
+      console.log(`isValid : ${JSON.stringify(isValid, null, 2)}`)
+
+      setFlashMessage('Your session has expired')
+      if (!isValid) {
+        await logout()
+      }
+
+      // usePopup?.triggerPopup('WelcomeLoggedOut')
+      // navigate('/', { state: { welcome: true } })
+    }
+  }, [])
   const steps = [
     ({ animationStyle }) => (
       <ProjectNameInput
@@ -60,6 +77,7 @@ const CreateProjectForm = props => {
         animationStyle={animationStyle}
         currentValue={formData?.projectAdmin}
         register={register}
+        goBack={goBack}
       />
     ),
     ({ animationStyle }) => (
@@ -67,14 +85,16 @@ const CreateProjectForm = props => {
         animationStyle={animationStyle}
         currentValue={formData?.projectDescription}
         register={register}
+        goBack={goBack}
       />
     ),
     ({ animationStyle }) => (
       <ProjectCategoryInput
         animationStyle={animationStyle}
-        categoryList={categoryList}
+        categoryList={props.categoryList}
         currentValue={formData?.projectCategory}
         register={register}
+        goBack={goBack}
       />
     ),
     ({ animationStyle }) => (
@@ -82,6 +102,7 @@ const CreateProjectForm = props => {
         animationStyle={animationStyle}
         currentValue={formData?.projectImpactLocation}
         register={register}
+        goBack={goBack}
       />
     ),
 
@@ -90,6 +111,7 @@ const CreateProjectForm = props => {
         animationStyle={animationStyle}
         currentValue={formData?.projectImage}
         register={register}
+        goBack={goBack}
       />
     ),
     ({ animationStyle }) => (
@@ -102,6 +124,7 @@ const CreateProjectForm = props => {
         }
         walletUsed={walletUsed}
         register={register}
+        goBack={goBack}
       />
     ),
     ({ animationStyle }) => (
@@ -109,57 +132,67 @@ const CreateProjectForm = props => {
         animationStyle={animationStyle}
         formData={formData}
         setStep={setCurrentStep}
-        categoryList={categoryList}
+        categoryList={props.categoryList}
       />
     )
   ]
 
-  const onSubmit = async data => {
-    let projectCategory = formData.projectCategory
-      ? formData.projectCategory
-      : {}
-    console.log({ currentStep })
-    if (currentStep === 6) {
-      if (
-        data?.projectWalletAddress?.length !== 42 ||
-        !Web3.utils.isAddress(data?.projectWalletAddress)
-      ) {
-        return Toast({ content: 'Eth address not valid', type: 'error' })
-      }
-      // CHECK IF WALLET IS ALREADY TAKEN FOR A PROJECT
-      const res = await client.query({
-        query: GET_PROJECT_BY_ADDRESS,
-        variables: {
-          address: data?.projectWalletAddress
+  const onSubmit = (formData, submitCurrentStep, doNextStep) => async data => {
+    let project = {}
+    try {
+      if (isCategoryStep(submitCurrentStep)) {
+        let projectCategory = {
+          ...data
         }
-      })
-      console.log({ res })
-      if (res?.data?.projectByAddress) {
-        return Toast({
-          content: 'This eth address is already being used for a project',
-          type: 'error'
-        })
+        project = {
+          ...formData,
+          projectCategory
+        }
+      } else {
+        project = {
+          ...formData,
+          ...data
+        }
       }
-    }
-    if (currentStep === 3) {
-      projectCategory = {
-        ...data
+
+      if (isFinalConfirmationStep(submitCurrentStep, steps)) {
+        const didEnterWalletAddress = !!data?.projectWalletAddress
+        let projectWalletAddress
+        if (didEnterWalletAddress) {
+          projectWalletAddress = await getProjectWallet(
+            data?.projectWalletAddress
+          )
+        } else {
+          projectWalletAddress = user.addresses[0]
+        }
+        if (await projectWalletAlreadyUsed(projectWalletAddress))
+          return Toast({
+            content: `Eth address ${projectWalletAddress} ${
+              !didEnterWalletAddress ? '(your logged in wallet address) ' : ''
+            }is already being used for a project`,
+            type: 'error'
+          })
+
+        project.projectWalletAddress = projectWalletAddress
       }
-      setFormData({
-        ...formData,
-        projectCategory
-      })
-    } else {
-      setFormData({
-        ...formData,
-        ...data
+
+      window?.localStorage.setItem(
+        'create-form',
+        JSON.stringify({ ...project, projectImage: null })
+      )
+      if (isLastStep(submitCurrentStep, steps)) {
+        props.onSubmit(project)
+      }
+
+      setFormData(project)
+      doNextStep()
+    } catch (error) {
+      console.log({ error })
+      Toast({
+        content: error?.message,
+        type: 'error'
       })
     }
-    console.log({ formData })
-    if (currentStep === steps.length - 1) {
-      props.onSubmit(formData)
-    }
-    nextStep()
   }
 
   const stepTransitions = useTransition(currentStep, null, {
@@ -176,29 +209,41 @@ const CreateProjectForm = props => {
 
   useEffect(() => {
     const checkProjectWallet = async () => {
-      console.log({ user })
       if (!user) return null
+
       if (JSON.stringify(user) === JSON.stringify({})) return setLoading(false)
-      // TODO CHECK IF THERE IS A PROJECT WITH THIS WALLET
       const { data } = await client.query({
         query: GET_PROJECT_BY_ADDRESS,
         variables: {
-          address: user?.addresses && user.addresses[0]
+          address: user.getWalletAddress()
         }
       })
       if (data?.projectByAddress) {
         setWalletUsed(true)
       } else {
-        setWalletUsed(user?.addresses && user.addresses[0])
+        setWalletUsed(user.getWalletAddress())
       }
       setLoading(false)
     }
     if (!isLoggedIn) {
-      navigate('/', { state: { welcome: true } })
+      navigate('/', { state: { welcome: true, flashMessage } })
+    } else if (!user?.name || !user?.email || user.email === '') {
+      usePopup?.triggerPopup('IncompleteProfile')
+      setIncompleteProfile(true)
     } else {
       checkProjectWallet()
     }
-  }, [user])
+  }, [user, isLoggedIn, client])
+
+  useEffect(() => {
+    //Checks localstorage to reset form
+    const localCreateForm = window?.localStorage.getItem('create-form')
+    localCreateForm && setFormData(JSON.parse(localCreateForm))
+  }, [])
+
+  if (incompleteProfile) {
+    return null
+  }
 
   if (loading) {
     return (
@@ -229,24 +274,6 @@ const CreateProjectForm = props => {
   //   )
   // }
 
-  if (!isWalletProved && !loading) {
-    return (
-      <Text sx={{ variant: 'headings.h2', color: 'secondary', m: 6 }}>
-        Let's first verify your wallet{' '}
-        <Link
-          sx={{
-            color: 'primary',
-            textDecoration: 'underline',
-            cursor: 'pointer'
-          }}
-          onClick={() => proveWallet()}
-        >
-          here
-        </Link>
-      </Text>
-    )
-  }
-
   return (
     <>
       <Progress max={steps.length} value={currentStep}>
@@ -254,55 +281,6 @@ const CreateProjectForm = props => {
       </Progress>
       <Box sx={{ mx: '140px', mt: '50px', position: 'relative' }}>
         <>
-          <Helmet>
-            <script
-              src={`https://maps.googleapis.com/maps/api/js?key=${APIKEY}&libraries=places&v=weekly`}
-              defer
-            />
-            <script type='text/javascript'>
-              {`
-          let map;
-          function initMap(setLocation) {
-              map = new google.maps.Map(document.getElementById('map'), {
-                  center: {lat: 0, lng: 0 },
-                  zoom: 1,
-                  mapTypeControl: false,
-                  panControl: false,
-                  zoomControl: false,
-                  streetViewControl: false
-              });
-              // Create the autocomplete object and associate it with the UI input control.
-              autocomplete = new google.maps.places.Autocomplete(
-                document.getElementById("autocomplete"),
-                {
-                  types: ["geocode"],
-                }  
-              );
-              places = new google.maps.places.PlacesService(map);
-              autocomplete.addListener("place_changed",function(e){
-                onPlaceChanged(setLocation);
-              });
-          }
-          function onPlaceChanged(setLocation) {
-            const place = autocomplete.getPlace();
-            if (place) {
-              if (place.geometry) {
-                map.panTo(place.geometry.location);
-                var marker = new google.maps.Marker({
-                  position: place.geometry.location,
-                  map: map,
-                  title: place.formatted_address
-                });
-                map.setZoom(13);
-                setLocation(place.formatted_address)
-              } else {
-                document.getElementById("autocomplete").placeholder = "Search a Location";
-              }
-            }
-          }
-        `}
-            </script>
-          </Helmet>
           <Flex
             sx={{
               alignItems: 'center',
@@ -328,7 +306,9 @@ const CreateProjectForm = props => {
           {currentStep === steps.length ? (
             <p>Creating project, please wait</p>
           ) : (
-            <form onSubmit={handleSubmit(onSubmit)}>
+            <form
+              onSubmit={handleSubmit(onSubmit(formData, currentStep, nextStep))}
+            >
               <>
                 {currentStep !== steps.length - 1 ? (
                   <EditButtonSection
@@ -370,3 +350,15 @@ CreateProjectForm.defaultProps = {
 
 /** export the typeform component */
 export default CreateProjectForm
+
+function isCategoryStep(currentStep) {
+  return currentStep === 3
+}
+
+function isFinalConfirmationStep(currentStep, steps) {
+  return currentStep === steps.length - 2
+}
+
+function isLastStep(currentStep, steps) {
+  return currentStep === steps.length - 1
+}
